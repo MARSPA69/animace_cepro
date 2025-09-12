@@ -871,55 +871,71 @@ function updateLogPanel() {
 }
 
 function startAnimation() {
+  // Debug logging for troubleshooting
   console.log("startAnimation called");
   console.log("window.leafletMap:", window.leafletMap);
   console.log("window.realData:", window.realData);
   console.log("animationData length:", animationData.length);
   console.log("idx:", idx);
 
-  const mode = document.getElementById('channelSelect')?.value || 'none';
+  // Get current animation mode from UI selector
+  const currentMode = document.getElementById('channelSelect')?.value || 'none';
   console.log("startAnimation called");
 
+  // Validate that map is available
   if (!window.leafletMap) {
     console.error("Mapa není k dispozici, nelze spustit animaci.");
     return;
   }
 
-  // zdroj pro single: window.realData
-  const dataSource = window.realData || [];
-  if (!Array.isArray(dataSource) || !dataSource.length) {
-    console.error("Nejsou načtena data pro animaci.", dataSource);
+  // Get data source for single mode animation (GNSS/offline data)
+  const rawDataSource = window.realData || [];
+  if (!Array.isArray(rawDataSource) || !rawDataSource.length) {
+    console.error("Nejsou načtena data pro animaci.", rawDataSource);
     return;
   }
 
-  // v BOTH se single animace nepouští
-  if (mode === 'both') {
+  // Prevent single animation in BOTH mode (uses bothRun() instead)
+  if (currentMode === 'both') {
     console.warn('startAnimation: režim BOTH používá bothRun().');
     return;
   }
-// připrav data pro single animaci
+
+  // Prepare animation data by converting raw data to animation series format
   animationData = makeAnimSeries(window.realData);
   if (!animationData.length) {
     console.error("Nejsou načtena reálná data pro animaci (po makeAnimSeries).");
     return;
   }
 
-
-  // Marker: v SINGLE režimech (GNSS / offlinegnss) černá kulička ANO, v BOTH NE
+  // Create or update the main animation marker
+  // In SINGLE modes (GNSS/offlinegnss) we show a black circle marker, not in BOTH mode
   if (!window.marker) {
-    window.marker = L.circleMarker([animationData[0].lat, animationData[0].lng], {
-      radius: 7, color: "#000", fillColor: "#00bfff", fillOpacity: 0.9
+    // Create new marker at first data point
+    const firstDataPoint = animationData[0];
+    window.marker = L.circleMarker([firstDataPoint.lat, firstDataPoint.lng], {
+      radius: 7,
+      color: "#000",
+      fillColor: "#00bfff",
+      fillOpacity: 0.9
     }).addTo(map);
   } else {
-    window.marker.setLatLng([animationData[0].lat, animationData[0].lng]);
+    // Update existing marker position to first data point
+    const firstDataPoint = animationData[0];
+    window.marker.setLatLng([firstDataPoint.lat, firstDataPoint.lng]);
   }
 
-  // Start přehrávání
+  // Initialize animation state and start playback
   animationActive = true;
   playbackSpeed = 1;
   updateSpeedDisplay();
   idx = 0;
-  if (window.timer) { clearTimeout(window.timer); window.timer = null; }
+  
+  // Clear any existing timer and start new animation loop
+  if (window.timer) {
+    clearTimeout(window.timer);
+    window.timer = null;
+  }
   window.timer = setTimeout(step, 0);
 }
 
