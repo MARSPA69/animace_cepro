@@ -1,0 +1,17 @@
+{
+  "name": "demo_zony_app1",
+  "version": "1.0.0",
+  "description": "",
+  "main": "main.js",
+  "scripts": {
+    "start": "cmd /c start \"\" electron ."
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^36.5.0"
+  }
+}
+
+

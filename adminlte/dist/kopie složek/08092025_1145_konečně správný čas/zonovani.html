@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8"/>
+  <title>Demo_zony</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+
+  <!-- Jednoduchá CSP pro HTTP tileLayer v dev‑režimu -->
+  <meta http-equiv="Content-Security-Policy"
+        content="
+          default-src 'self';
+          img-src     'self' http://*.tile.openstreetmap.org data:;
+          connect-src 'self' http://*.tile.openstreetmap.org;
+          style-src   'self' 'unsafe-inline' https://unpkg.com;
+          script-src  'self' 'unsafe-eval' https://unpkg.com https://cdn.jsdelivr.net;
+        ">
+
+  <!-- Leaflet CSS z CDN -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha512-XQoYMqh8bZ4h0h+yDgTN0ro7+MbI8Q+gXvHB02N30ZoV3E4U0WL3K3ZQ4XeGc2A4Cj4mwN2ZqZw5xjQJMo5Qkg=="
+    crossorigin=""
+  />
+
+  <style>
+    html, body { height:100%; margin:0; padding:0; }
+    #map { width:100%; height:100%; }
+    .blink { color:red; animation:blinker 1s linear infinite; }
+    @keyframes blinker { 50% { opacity:0; } }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+    <!-- 2) Tlačítko pro export JSON -->
+    <button
+    id="exportLogBtn"
+    class="btn btn-outline-primary btn-sm"
+    style="position:absolute; top:10px; left:10px; z-index:2000;"
+  >
+    📥 Export JSON
+  </button>
+
+  <!-- Leaflet JS z CDN -->
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha512-gZwIG9x3wUXgRoGZHyfZG6T04oFTbRlgF4awjRoFIB5R2yv1Nsz4gz9RT+ZOeBXprN1iCFsC1H/8j9D/suE2vg=="
+    crossorigin=""
+  ></script>
+  <!-- Turf.js z CDN -->
+  <script
+    src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"
+    integrity="sha256-sjx3o3F0KqZ9HlJSlZ0Q+JZfmK9ehS4H0Gh7YYYZi8o="
+    crossorigin="anonymous"
+  ></script>
+  <!-- Váš renderer -->
+  <script src="ANCHOR.js"></script>
+  <script src="FIXED_GPS_MESH.js"></script>
+  <script src="MESH_FIXEDGPS_ANCHFOOTPRINT.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>
+
