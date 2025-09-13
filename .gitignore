@@ -8,3 +8,6 @@ Thumbs.db
 .DS_Store
 # VSCode
 .vscode/
+# Secrets
+.env
+continue.json

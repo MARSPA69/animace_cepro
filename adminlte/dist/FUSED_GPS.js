@@ -750,10 +750,14 @@ if (CROSS_MODE) {
   const decision = decideAtCrossing(s, { lat: latFinal, lng: lngFinal }, baseRow);
 
   if (document.getElementById('crossLogPanel')) {
+    // Calculate distance to crossing point for display
+    const crossPoint = CROSS_POINTS.find(cp => cp.name === CROSS_MODE.name);
+    const distToCross = crossPoint ? haversine_m(latFinal, lngFinal, crossPoint.lat, crossPoint.lng) : 0;
+    
     document.getElementById('crossLogPanel').innerHTML = `
       <b>CROSS ${CROSS_MODE.name}</b><br>
       ts=${baseRow?.ts}<br>
-      d=${d.toFixed(1)}m v=${v.toFixed(2)}m/s<br>
+      d=${distToCross.toFixed(1)}m v=${v.toFixed(2)}m/s<br>
       decision=${decision || "?"}
     `;
   }
@@ -774,8 +778,9 @@ const ts   = `${hh}:${mm}:${ss}`;
 // Create record object for this second
 const rec = {
   sec: s,
-  timeStr: baseRow?.ts || "00:00:00",
-  time: s * 1000,
+  timeStr: baseRow?.ts || ts,  // Use calculated timestamp if baseRow is null
+  timestamp: baseRow?.ts || ts, // Add timestamp field for renderer compatibility
+  time: Number.isFinite(s) ? s * 1000 : 0, // Ensure time is a valid number
   lat: latFinal,
   lng: lngFinal,
   speed_mps: v,
