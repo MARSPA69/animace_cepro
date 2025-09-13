@@ -36,6 +36,13 @@
       media="print"
       onload="this.media='all'"
     />
+    <!-- Google Fonts - Inter for modern UI -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Tabler Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons@latest/icons-sprite.svg">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons@latest/icons-sprite.css">
     <!--end::Fonts-->
     <!--begin::Third Party Plugin(OverlayScrollbars)-->
     <link
@@ -50,15 +57,317 @@
       href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.13.1/font/bootstrap-icons.min.css"
       crossorigin="anonymous"
     />
-    <!-- Tvoje vlastní CSS pro infoPanel -->
+    <!-- Modern UI Styling -->
     <style>
+      /* Import Inter font for modern UI */
+      * {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      }
+
+      /* Modern Control Panel Buttons */
+      #controls {
+        background: rgba(255, 255, 255, 0.95) !important;
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 16px !important;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.05);
+        padding: 16px !important;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+
+      #controls:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15), 0 4px 12px rgba(0, 0, 0, 0.08);
+      }
+
+      /* Modern Button Styles */
+      .btn-modern {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        padding: 12px 20px;
+        border: none;
+        border-radius: 12px;
+        font-weight: 500;
+        font-size: 14px;
+        line-height: 1;
+        text-decoration: none;
+        cursor: pointer;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        overflow: hidden;
+        min-width: 100px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+
+      .btn-modern::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+        transition: left 0.5s;
+      }
+
+      .btn-modern:hover::before {
+        left: 100%;
+      }
+
+      .btn-modern:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+      }
+
+      .btn-modern:active {
+        transform: translateY(0);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+
+      /* Button Color Variants */
+      .btn-modern-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+      }
+
+      .btn-modern-success {
+        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        color: white;
+      }
+
+      .btn-modern-warning {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        color: white;
+      }
+
+      .btn-modern-danger {
+        background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+        color: white;
+      }
+
+      .btn-modern-secondary {
+        background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+        color: #333;
+      }
+
+      /* Modern Info Panels */
+      .info-panel-modern {
+        background: rgba(255, 255, 255, 0.95) !important;
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 16px !important;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.05);
+        padding: 20px !important;
+        font-size: 14px;
+        line-height: 1.5;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+
+      .info-panel-modern:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15), 0 4px 12px rgba(0, 0, 0, 0.08);
+      }
+
+      .info-panel-modern h3,
+      .info-panel-modern strong {
+        color: #1a202c;
+        font-weight: 600;
+        margin-bottom: 12px;
+        font-size: 16px;
+      }
+
+      .info-panel-modern .info-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 8px 0;
+        border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+      }
+
+      .info-panel-modern .info-item:last-child {
+        border-bottom: none;
+      }
+
+      .info-panel-modern .info-label {
+        font-weight: 500;
+        color: #4a5568;
+      }
+
+      .info-panel-modern .info-value {
+        font-weight: 600;
+        color: #2d3748;
+      }
+
+      /* Ball Info Panel Specific */
+      #ballInfoPanel {
+        background: rgba(255, 255, 255, 0.95) !important;
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 16px !important;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.05);
+        padding: 20px !important;
+        font-size: 14px;
+        line-height: 1.5;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        cursor: move;
+      }
+
+      #ballInfoPanel:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15), 0 4px 12px rgba(0, 0, 0, 0.08);
+      }
+
+      #ballInfoPanel strong {
+        color: #1a202c;
+        font-weight: 600;
+        margin-bottom: 12px;
+        font-size: 16px;
+        display: block;
+      }
+
+      /* Cross Log Panel */
+      .leaflet-bar {
+        background: rgba(255, 255, 255, 0.95) !important;
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.2) !important;
+        border-radius: 16px !important;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.05) !important;
+        padding: 16px !important;
+        font-family: 'Inter', sans-serif;
+        font-size: 13px;
+        line-height: 1.4;
+      }
+
+      /* Incident Panel */
       #infoPanel {
         position: absolute;
         top: 80px;
         left: 20px;
         z-index: 1500;
+        background: rgba(255, 255, 255, 0.95) !important;
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 16px !important;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.05);
+        padding: 20px !important;
+        font-family: 'Inter', sans-serif;
+        font-size: 14px;
+        line-height: 1.5;
+        max-width: 320px;
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       }
-     </style>
+
+      #infoPanel:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15), 0 4px 12px rgba(0, 0, 0, 0.08);
+      }
+
+      #infoPanel strong {
+        color: #1a202c;
+        font-weight: 600;
+        margin-bottom: 12px;
+        font-size: 16px;
+        display: block;
+      }
+
+      #infoPanel button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 8px 16px;
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      #infoPanel button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+      }
+
+      /* Map Controls */
+      #map-controls {
+        background: rgba(255, 255, 255, 0.95) !important;
+        backdrop-filter: blur(20px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 16px !important;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.05);
+        padding: 16px !important;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      #map-controls button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 12px;
+        padding: 12px 20px;
+        font-weight: 500;
+        font-size: 14px;
+        cursor: pointer;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+      }
+
+      #map-controls button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+      }
+
+      #map-controls button:active {
+        transform: translateY(0);
+      }
+
+      /* Responsive Design */
+      @media (max-width: 768px) {
+        #controls {
+          flex-wrap: wrap;
+          gap: 8px;
+          padding: 12px !important;
+        }
+        
+        .btn-modern {
+          min-width: 80px;
+          padding: 10px 16px;
+          font-size: 13px;
+        }
+        
+        .info-panel-modern,
+        #ballInfoPanel,
+        #infoPanel {
+          padding: 16px !important;
+          font-size: 13px;
+        }
+      }
+
+      /* Animation for smooth transitions */
+      @keyframes fadeInUp {
+        from {
+          opacity: 0;
+          transform: translateY(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .info-panel-modern,
+      #ballInfoPanel,
+      #infoPanel,
+      #controls {
+        animation: fadeInUp 0.3s ease-out;
+      }
+    </style>
     <!--end::Third Party Plugin(Bootstrap Icons)-->
     <!--begin::Required Plugin(AdminLTE)-->
     <!-- Leaflet CSS (nutné pro správné vykreslení dlaždic) -->
@@ -450,7 +759,8 @@
                                     placeholder="Rychlost m/s" value="1.4">
                              <input id="timeLength" class="form-control form-control-sm mb-2"
                                     placeholder="Délka (s)" value="60">
-                             <button id="btnRunSynthetic" class="btn btn-primary btn-sm w-100">
+                             <button id="btnRunSynthetic" class="btn-modern btn-modern-primary" style="width: 100%;">
+                               <i class="bi bi-geo-alt"></i>
                                Spustit syntetickou trasu
                              </button>
                             </div>
@@ -466,10 +776,12 @@
                        </label>
 
                        <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                         <button id="btn-offline-gnss" class="btn btn-primary btn-sm">
+                         <button id="btn-offline-gnss" class="btn-modern btn-modern-primary" style="flex: 1; min-width: 140px;">
+                           <i class="bi bi-play-circle"></i>
                            Spustit Offline GNSS
                          </button>
-                         <button id="btn-save-fused-log" class="btn btn-outline-secondary btn-sm" style="margin-top:6px;">
+                         <button id="btn-save-fused-log" class="btn-modern btn-modern-secondary" style="flex: 1; min-width: 140px;">
+                           <i class="bi bi-save"></i>
                            Uložit F_GPS.js
                          </button>
                         </div>
@@ -1108,37 +1420,42 @@
                   </div>
                   <div id="map-wrapper" class="card-body" style="position:relative; padding:0;">
                     <div id="leafletMap" style="width:100%; height:100%; min-height:400px;"></div>
-                    <div id="map-controls" style="
-                      position: absolute;
-                      bottom: 10px;
-                      right: 10px;
-                      z-index: 2001;
-                      display: flex;
-                      flex-direction: column;
-                      gap: 6px;
-                    ">
-                      <button id="exportLogBtn" class="btn btn-primary">Exportovat log</button>
-                      <button id="btn-fullscreen" class="btn btn-outline-primary btn-sm" title="Zobrazit mapu na celou obrazovku">⤢</button>
-                      <button id="btn-restore" class="btn btn-outline-secondary btn-sm" style="display:none;" title="Zmenšit mapu">🗗</button>
+                    <div id="map-controls">
+                      <button id="exportLogBtn" class="btn-modern btn-modern-primary">
+                        <i class="bi bi-download"></i>
+                        Exportovat log
+                      </button>
+                      <button id="btn-fullscreen" class="btn-modern btn-modern-primary" title="Zobrazit mapu na celou obrazovku">
+                        <i class="bi bi-fullscreen"></i>
+                        Celá obrazovka
+                      </button>
+                      <button id="btn-restore" class="btn-modern btn-modern-secondary" style="display:none;" title="Zmenšit mapu">
+                        <i class="bi bi-fullscreen-exit"></i>
+                        Zmenšit
+                      </button>
                   </div>
                   <ul id="log-list" style="padding-left:1em;"></ul>
-                  <div id="controls" class="draggable-panel" style="
-                     position:absolute;
-                     bottom:10px;
-                     left:50%;
-                     transform: translateX(-50%);
-                     z-index:1001;
-                     cursor: move;
-                     background:rgba(255,255,255,0.95);
-                     padding:10px;
-                     border-radius:6px;
-                     box-shadow: 0 0 8px rgba(0,0,0,0.2);
-                    ">
-                     <button id="startBtn" class="btn btn-success btn-sm">▶ RUN</button>
-                     <button id="pauseBtn" class="btn btn-warning btn-sm">⏸ PAUSE</button>
-                     <button id="stopBtn" class="btn btn-danger btn-sm">⏹ STOP</button>
-                    <button id="fasterBtn" class="btn btn-secondary btn-sm">⏩ Zrychlit</button>
-                    <button id="slowerBtn" class="btn btn-secondary btn-sm">⏪ Zpomalit</button>
+                   <div id="controls" class="draggable-panel">
+                     <button id="startBtn" class="btn-modern btn-modern-success">
+                       <i class="bi bi-play-fill"></i>
+                       RUN
+                     </button>
+                     <button id="pauseBtn" class="btn-modern btn-modern-warning">
+                       <i class="bi bi-pause-fill"></i>
+                       PAUSE
+                     </button>
+                     <button id="stopBtn" class="btn-modern btn-modern-danger">
+                       <i class="bi bi-stop-fill"></i>
+                       STOP
+                     </button>
+                     <button id="fasterBtn" class="btn-modern btn-modern-secondary">
+                       <i class="bi bi-fast-forward-fill"></i>
+                       Zrychlit
+                     </button>
+                     <button id="slowerBtn" class="btn-modern btn-modern-secondary">
+                       <i class="bi bi-rewind-fill"></i>
+                       Zpomalit
+                     </button>
                    </div>
                   </div>
                 </div>
