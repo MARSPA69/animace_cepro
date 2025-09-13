@@ -725,25 +725,29 @@ exportIncidentsBtn.onclick = () => {
 };
 infoPanel.appendChild(exportIncidentsBtn);
 
-// --- Modern Info panel pro kuličku ---
+// --- Info panel pro kuličku ---
 const ballInfoPanel = document.createElement('div');
 ballInfoPanel.id = 'ballInfoPanel';
+Object.assign(ballInfoPanel.style, {
+  position: 'absolute',
+  bottom: '10px',
+  left: '10px',
+  width: '280px',
+  background: 'rgba(255,255,255,0.95)',
+  border: '1px solid #ccc',
+  borderRadius: '8px',
+  padding: '10px',
+  fontSize: '12px',
+  zIndex: 1001,
+  resize: 'both',
+  overflow: 'auto',
+  cursor: 'move'
+});
 ballInfoPanel.innerHTML = `
-  <div class="panel-header">
-    <div class="panel-title">
-      <i class="bi bi-info-circle"></i>
-      Info o kuličce
-    </div>
-    <div class="panel-controls">
-      <button class="control-btn" id="minimize-btn" title="Minimalizovat">−</button>
-      <button class="control-btn" id="close-btn" title="Zavřít">×</button>
-    </div>
-  </div>
-  <div class="panel-content">
-    <div id="ball-info-content"></div>
-    <div id="mesh-extra" style="margin-top:8px; font-size:11px; color:#0d6efd"></div>
-  </div>
-  <div class="resize-handle"></div>
+  <strong>Info o kuličce</strong>
+  <div id="ball-info-content" style="margin-top:8px;"></div>
+  <div id="mesh-extra"
+       style="margin-top:6px; font-size:11px; color:#0d6efd"></div>
 `;
 document.getElementById('map-wrapper')?.appendChild(ballInfoPanel);
 
@@ -816,141 +820,32 @@ function updateGnssHud(b){
 
 
 
-// --- Enhanced Drag and Resize Functionality ---
+// --- Přetahování panelu ---
 (function() {
-  let isDragging = false;
-  let isResizing = false;
-  let startX, startY, startWidth, startHeight, startLeft, startTop;
-  let isMinimized = false;
-
-  // Panel control buttons
-  const minimizeBtn = document.getElementById('minimize-btn');
-  const closeBtn = document.getElementById('close-btn');
-  const panelHeader = ballInfoPanel.querySelector('.panel-header');
-  const panelContent = ballInfoPanel.querySelector('.panel-content');
-  const resizeHandle = ballInfoPanel.querySelector('.resize-handle');
-
-  // Minimize functionality
-  minimizeBtn?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    isMinimized = !isMinimized;
-    if (isMinimized) {
-      panelContent.style.display = 'none';
-      ballInfoPanel.style.height = 'auto';
-      minimizeBtn.textContent = '+';
-      minimizeBtn.title = 'Rozbalit';
-    } else {
-      panelContent.style.display = 'block';
-      ballInfoPanel.style.height = '';
-      minimizeBtn.textContent = '−';
-      minimizeBtn.title = 'Minimalizovat';
-    }
-  });
-
-  // Close functionality
-  closeBtn?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    ballInfoPanel.style.display = 'none';
-  });
-
-  // Function to show panel (can be called from outside)
-  window.showBallInfoPanel = () => {
-    ballInfoPanel.style.display = 'block';
+  let offsetX = 0, offsetY = 0, dragging = false;
+  ballInfoPanel.onmousedown = e => {
+    const rect = ballInfoPanel.getBoundingClientRect();
+    offsetX = e.clientX - rect.left;
+    offsetY = e.clientY - rect.top;
+    dragging = true;
+    ballInfoPanel.style.opacity = 0.85;
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', stop);
   };
 
-  // Drag functionality - only on header
-  panelHeader.addEventListener('mousedown', (e) => {
-    if (e.target.closest('.control-btn')) return; // Don't drag when clicking control buttons
-    
-    isDragging = true;
-    startX = e.clientX;
-    startY = e.clientY;
-    startLeft = parseInt(window.getComputedStyle(ballInfoPanel).left, 10);
-    startTop = parseInt(window.getComputedStyle(ballInfoPanel).top, 10);
-    
-    ballInfoPanel.classList.add('dragging');
-    document.addEventListener('mousemove', handleDrag);
-    document.addEventListener('mouseup', stopDrag);
-    e.preventDefault();
-  });
-
-  // Resize functionality
-  resizeHandle.addEventListener('mousedown', (e) => {
-    isResizing = true;
-    startX = e.clientX;
-    startY = e.clientY;
-    startWidth = parseInt(window.getComputedStyle(ballInfoPanel).width, 10);
-    startHeight = parseInt(window.getComputedStyle(ballInfoPanel).height, 10);
-    
-    ballInfoPanel.classList.add('resizing');
-    document.addEventListener('mousemove', handleResize);
-    document.addEventListener('mouseup', stopResize);
-    e.preventDefault();
-    e.stopPropagation();
-  });
-
-  function handleDrag(e) {
-    if (!isDragging) return;
-    
-    const deltaX = e.clientX - startX;
-    const deltaY = e.clientY - startY;
-    
-    const newLeft = startLeft + deltaX;
-    const newTop = startTop + deltaY;
-    
-    // Keep panel within viewport bounds
-    const mapWrapper = document.getElementById('map-wrapper');
-    const mapRect = mapWrapper.getBoundingClientRect();
-    const panelRect = ballInfoPanel.getBoundingClientRect();
-    
-    const maxLeft = mapRect.width - panelRect.width;
-    const maxTop = mapRect.height - panelRect.height;
-    
-    ballInfoPanel.style.left = Math.max(0, Math.min(newLeft, maxLeft)) + 'px';
-    ballInfoPanel.style.top = Math.max(0, Math.min(newTop, maxTop)) + 'px';
+  function move(e) {
+    if (!dragging) return;
+    ballInfoPanel.style.left = (e.pageX - offsetX) + 'px';
+    ballInfoPanel.style.top = (e.pageY - offsetY) + 'px';
     ballInfoPanel.style.bottom = 'auto';
-    ballInfoPanel.style.right = 'auto';
   }
 
-  function handleResize(e) {
-    if (!isResizing) return;
-    
-    const deltaX = e.clientX - startX;
-    const deltaY = e.clientY - startY;
-    
-    const newWidth = Math.max(280, startWidth + deltaX); // Min width 280px
-    const newHeight = Math.max(120, startHeight + deltaY); // Min height 120px
-    
-    ballInfoPanel.style.width = newWidth + 'px';
-    ballInfoPanel.style.height = newHeight + 'px';
+  function stop() {
+    dragging = false;
+    ballInfoPanel.style.opacity = 1;
+    document.removeEventListener('mousemove', move);
+    document.removeEventListener('mouseup', stop);
   }
-
-  function stopDrag() {
-    isDragging = false;
-    ballInfoPanel.classList.remove('dragging');
-    document.removeEventListener('mousemove', handleDrag);
-    document.removeEventListener('mouseup', stopDrag);
-  }
-
-  function stopResize() {
-    isResizing = false;
-    ballInfoPanel.classList.remove('resizing');
-    document.removeEventListener('mousemove', handleResize);
-    document.removeEventListener('mouseup', stopResize);
-  }
-
-  // Prevent text selection during drag/resize
-  ballInfoPanel.addEventListener('selectstart', (e) => {
-    if (isDragging || isResizing) {
-      e.preventDefault();
-    }
-  });
-
-  // Double-click header to toggle minimize
-  panelHeader.addEventListener('dblclick', () => {
-    minimizeBtn?.click();
-  });
-
 })();
 
 function updateLogPanel() {
@@ -1396,51 +1291,15 @@ if (ballInfo) {
 const when = rec.timeStr || "00:00:00";
 const tStr = when;
 
-// Determine status and badge
-let statusText, statusClass;
-if (mode === 'offlinegnss') {
-  statusText = 'F_GPS (syntetická)';
-  statusClass = 'yellow';
-} else if (inRed) {
-  statusText = 'INCIDENT v zakázané zóně';
-  statusClass = 'red';
-} else if (inGreen) {
-  statusText = 'V povolené zóně';
-  statusClass = 'green';
-} else {
-  statusText = 'Mezi zónami';
-  statusClass = 'yellow';
-}
-
 ballInfo.innerHTML = `
-  <div class="info-item">
-    <span class="info-label">Status:</span>
-    <span class="status-badge ${statusClass}">${statusText}</span>
-  </div>
-  <div class="info-item">
-    <span class="info-label">Čas:</span>
-    <span class="info-value">${tStr}</span>
-  </div>
-  <div class="info-item">
-    <span class="info-label">Souřadnice:</span>
-    <span class="info-value">${rec.lat.toFixed(6)}, ${rec.lng.toFixed(6)}</span>
-  </div>
-  <div class="info-item">
-    <span class="info-label">Rychlost:</span>
-    <span class="info-value">${mps.toFixed(2)} m/s (${kmh.toFixed(1)} km/h)</span>
-  </div>
-  <div class="info-item">
-    <span class="info-label">Vzdál. k nejbl. MESH:</span>
-    <span class="info-value">${distTxt}</span>
-  </div>
-  ${matchHtml ? `<div class="info-item">
-    <span class="info-label">Shoda ID kotev:</span>
-    <span class="info-value">${matchHtml.replace(/<[^>]*>/g, '')}</span>
-  </div>` : ''}
-  <div class="info-item">
-    <span class="info-label">ID:</span>
-    <span class="info-value">${SUBJECT_ID}</span>
-  </div>
+  <b>${mode === 'offlinegnss' ? 'F_GPS (syntetická)' : inRed ? 'INCIDENT v zakázané zóně' : inGreen ? 'V povolené zóně' : 'Mezi zónami'}</b>
+  <hr style="margin:5px 0">
+  <b>Čas:</b> ${tStr}<br>
+  <b>Souřadnice:</b> ${rec.lat.toFixed(6)}, ${rec.lng.toFixed(6)}<br>
+  <b>Rychlost:</b> ${mps.toFixed(2)} m/s (${kmh.toFixed(1)} km/h)<br>
+  <b>Vzdál. k nejbl. MESH:</b> ${distTxt}<br>
+  ${matchHtml}
+  <b>ID:</b> ${SUBJECT_ID}
 `;
 
   console.log("Single HUD rec:", rec, "timeStr:", rec.timeStr, "lastRecStr:", window._lastRecStr);
@@ -2672,38 +2531,17 @@ function updateBothInfoPanel(fIndex, bIndex) {
 
 
   info.innerHTML = `
-    <div class="info-item">
-      <span class="info-label">Režim:</span>
-      <span class="status-badge yellow">Porovnání (F_GPS vs GNSS)</span>
-    </div>
-    <div class="info-item">
-      <span class="info-label">Zóny:</span>
-      <span class="info-value">${zoneHtmlF.replace(/<[^>]*>/g, '')} | ${zoneHtmlB.replace(/<[^>]*>/g, '')}</span>
-    </div>
-    <div class="info-item">
-      <span class="info-label">ΔTIME:</span>
-      <span class="info-value">${lag_s.toFixed(2)} s</span>
-    </div>
-    <div class="info-item">
-      <span class="info-label">ΔDIST:</span>
-      <span class="info-value">${d_m.toFixed(2)} m</span>
-    </div>
-    <div class="info-item">
-      <span class="info-label">ΔSPEED:</span>
-      <span class="info-value">${d_spd.toFixed(2)} m/s</span>
-    </div>
-    <div class="info-item">
-      <span class="info-label">ID MATCH:</span>
-      <span class="info-value">${match.length ? match.join(', ') : '—'}</span>
-    </div>
-    <div class="info-item">
-      <span class="info-label">TIME (F_GPS):</span>
-      <span class="info-value">${getRecTimeStr(f)}</span>
-    </div>
-    <div class="info-item">
-      <span class="info-label">TIME (GNSS):</span>
-      <span class="info-value">${getRecTimeStr(b)}</span>
-    </div>
+    <b>Porovnání (F_GPS vs GNSS)</b>
+    <hr style="margin:5px 0">
+    <div>${zoneHtmlF} &nbsp;|&nbsp; ${zoneHtmlB}</div>
+    <b>ΔTIME:</b> ${lag_s.toFixed(2)} s &nbsp;·&nbsp;
+    <b>ΔDIST:</b> ${d_m.toFixed(2)} m &nbsp;·&nbsp;
+    <b>ΔSPEED:</b> ${d_spd.toFixed(2)} m/s
+    <br>
+    <b>ID MATCH:</b> ${match.length ? match.join(', ') : '—'}
+    <br>
+    <b>TIME (F_GPS):</b> ${getRecTimeStr(f)} &nbsp;|&nbsp;
+    <b>TIME (GNSS):</b> ${getRecTimeStr(b)}
   `;
 }
 
