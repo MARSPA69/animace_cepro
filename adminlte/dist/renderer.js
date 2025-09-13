@@ -396,14 +396,17 @@ function getDistToSmallPoly(point) {
 // --- CROSSING DEBUG PANEL ---
 const crossLogPanel = L.control({position:'topright'});
 crossLogPanel.onAdd = function() {
-  const div = L.DomUtil.create('div', 'leaflet-bar');
+  const div = L.DomUtil.create('div', 'cross-panel');
   div.id = 'crossLogPanel';
   div.style.background = 'rgba(255,255,255,0.9)';
-  div.style.padding = '5px';
+  div.style.padding = '12px';
   div.style.maxHeight = '150px';
   div.style.overflowY = 'auto';
-  div.style.fontSize = '11px';
+  div.style.fontSize = '13px';
   div.style.marginTop = '50px';
+  div.style.fontFamily = "'Inter', sans-serif";
+  div.style.borderRadius = '12px';
+  div.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
   div.innerHTML = '<b>Cross Debug</b><br>(zatím prázdné)';
   return div;
 };
@@ -729,21 +732,21 @@ infoPanel.appendChild(exportIncidentsBtn);
 const ballInfoPanel = document.createElement('div');
 ballInfoPanel.id = 'ballInfoPanel';
 ballInfoPanel.innerHTML = `
-  <div class="panel-header">
-    <div class="panel-title">
+  <div class="panel-header" style="background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: white; padding: 12px 16px; border-radius: 12px 12px 0 0; font-weight: 600; font-size: 16px; display: flex; justify-content: space-between; align-items: center; cursor: move; user-select: none;">
+    <div class="panel-title" style="display: flex; align-items: center; gap: 8px;">
       <i class="bi bi-info-circle"></i>
       Info o kuličce
     </div>
-    <div class="panel-controls">
-      <button class="control-btn" id="minimize-btn" title="Minimalizovat">−</button>
-      <button class="control-btn" id="close-btn" title="Zavřít">×</button>
+    <div class="panel-controls" style="display: flex; gap: 4px;">
+      <button class="control-btn" id="minimize-btn" title="Minimalizovat" style="width: 20px; height: 20px; border-radius: 50%; border: none; background: rgba(255, 255, 255, 0.2); color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; transition: all 0.2s ease;">−</button>
+      <button class="control-btn" id="close-btn" title="Zavřít" style="width: 20px; height: 20px; border-radius: 50%; border: none; background: rgba(255, 255, 255, 0.2); color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; transition: all 0.2s ease;">×</button>
     </div>
   </div>
-  <div class="panel-content">
+  <div class="panel-content" style="padding: 16px; max-height: 300px; overflow-y: auto; font-family: 'Inter', sans-serif;">
     <div id="ball-info-content"></div>
     <div id="mesh-extra" style="margin-top:8px; font-size:11px; color:#0d6efd"></div>
   </div>
-  <div class="resize-handle"></div>
+  <div class="resize-handle" style="position: absolute; bottom: 0; right: 0; width: 20px; height: 20px; background: linear-gradient(-45deg, transparent 30%, rgba(0, 0, 0, 0.1) 30%, rgba(0, 0, 0, 0.1) 70%, transparent 70%); cursor: nw-resize; border-radius: 0 0 12px 0;"></div>
 `;
 document.getElementById('map-wrapper')?.appendChild(ballInfoPanel);
 

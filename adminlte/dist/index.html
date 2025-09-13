@@ -64,8 +64,93 @@
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       }
 
-      /* Modern Control Panel Buttons */
+      /* Global Button Styles - uiverse.io inspired */
+      .btn {
+        font-family: 'Inter', sans-serif;
+        border-radius: 12px;
+        padding: 8px 16px;
+        font-weight: 500;
+        transition: all 0.2s ease-in-out;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+        border: none;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 14px;
+        text-decoration: none;
+        user-select: none;
+      }
+
+      .btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+      }
+
+      .btn:active {
+        transform: translateY(0);
+        box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+      }
+
+      /* Button Color Variants */
+      .btn-run, .btn-speedup, .btn-slowdown {
+        background: #2563eb;
+        color: white;
+      }
+      .btn-run:hover, .btn-speedup:hover, .btn-slowdown:hover {
+        background: #1d4ed8;
+      }
+
+      .btn-stop {
+        background: #ef4444;
+        color: white;
+      }
+      .btn-stop:hover {
+        background: #dc2626;
+      }
+
+      .btn-pause {
+        background: #f97316;
+        color: white;
+      }
+      .btn-pause:hover {
+        background: #ea580c;
+      }
+
+      .btn-secondary {
+        background: #6b7280;
+        color: white;
+      }
+      .btn-secondary:hover {
+        background: #4b5563;
+      }
+
+      /* Info Panels */
+      .info-panel, .cross-panel {
+        position: absolute;
+        background: rgba(255, 255, 255, 0.9);
+        border-radius: 12px;
+        padding: 12px;
+        font-family: 'Inter', sans-serif;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        resize: both;
+        overflow: auto;
+        z-index: 1001;
+        transition: all 0.2s ease-in-out;
+      }
+
+      .info-panel:hover, .cross-panel:hover {
+        box-shadow: 0 6px 16px rgba(0,0,0,0.2);
+      }
+
+
+
+      /* Modern Control Panel - Draggable */
       #controls {
+        position: absolute !important;
+        bottom: 20px !important;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
         background: rgba(255, 255, 255, 0.95) !important;
         backdrop-filter: blur(20px);
         border: 1px solid rgba(255, 255, 255, 0.2);
@@ -76,11 +161,20 @@
         gap: 12px;
         align-items: center;
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        cursor: move;
+        z-index: 1001 !important;
+        user-select: none;
       }
 
       #controls:hover {
-        transform: translateY(-2px);
+        transform: translateX(-50%) translateY(-2px) !important;
         box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15), 0 4px 12px rgba(0, 0, 0, 0.08);
+      }
+
+      #controls.dragging {
+        transform: translateX(-50%) rotate(2deg) !important;
+        opacity: 0.8;
+        z-index: 2000 !important;
       }
 
       /* Modern Button Styles */
@@ -203,17 +297,17 @@
         color: #2d3748;
       }
 
-      /* Ball Info Panel Specific - Modern Design */
+      /* Ball Info Panel - Updated Design */
       #ballInfoPanel {
-        background: rgba(255, 255, 255, 0.95) !important;
+        background: rgba(255, 255, 255, 0.9) !important;
         backdrop-filter: blur(20px);
         border: 1px solid rgba(255, 255, 255, 0.2);
-        border-radius: 16px !important;
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.05);
+        border-radius: 12px !important;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
         padding: 0 !important;
         font-size: 14px;
         line-height: 1.5;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        transition: all 0.2s ease-in-out;
         cursor: move;
         position: absolute !important;
         z-index: 1001 !important;
@@ -223,6 +317,7 @@
         max-height: 400px;
         overflow: hidden;
         user-select: none;
+        font-family: 'Inter', sans-serif;
       }
 
       #ballInfoPanel:hover {
@@ -1596,39 +1691,47 @@
                   </div>
                   <div id="map-wrapper" class="card-body" style="position:relative; padding:0;">
                     <div id="leafletMap" style="width:100%; height:100%; min-height:400px;"></div>
-                    <div id="map-controls">
-                      <button id="exportLogBtn" class="btn-modern btn-modern-primary">
+                    <div id="map-controls" style="
+                      position: absolute;
+                      bottom: 10px;
+                      right: 10px;
+                      z-index: 2001;
+                      display: flex;
+                      flex-direction: column;
+                      gap: 6px;
+                    ">
+                      <button id="exportLogBtn" class="btn btn-secondary">
                         <i class="bi bi-download"></i>
                         Exportovat log
                       </button>
-                      <button id="btn-fullscreen" class="btn-modern btn-modern-primary" title="Zobrazit mapu na celou obrazovku">
+                      <button id="btn-fullscreen" class="btn btn-secondary" title="Zobrazit mapu na celou obrazovku">
                         <i class="bi bi-fullscreen"></i>
                         Celá obrazovka
                       </button>
-                      <button id="btn-restore" class="btn-modern btn-modern-secondary" style="display:none;" title="Zmenšit mapu">
+                      <button id="btn-restore" class="btn btn-secondary" style="display:none;" title="Zmenšit mapu">
                         <i class="bi bi-fullscreen-exit"></i>
                         Zmenšit
                       </button>
                   </div>
                   <ul id="log-list" style="padding-left:1em;"></ul>
                    <div id="controls" class="draggable-panel">
-                     <button id="startBtn" class="btn-modern btn-modern-success">
+                     <button id="startBtn" class="btn btn-run">
                        <i class="bi bi-play-fill"></i>
                        RUN
                      </button>
-                     <button id="pauseBtn" class="btn-modern btn-modern-warning">
+                     <button id="pauseBtn" class="btn btn-pause">
                        <i class="bi bi-pause-fill"></i>
                        PAUSE
                      </button>
-                     <button id="stopBtn" class="btn-modern btn-modern-danger">
+                     <button id="stopBtn" class="btn btn-stop">
                        <i class="bi bi-stop-fill"></i>
                        STOP
                      </button>
-                     <button id="fasterBtn" class="btn-modern btn-modern-secondary">
+                     <button id="fasterBtn" class="btn btn-speedup">
                        <i class="bi bi-fast-forward-fill"></i>
                        Zrychlit
                      </button>
-                     <button id="slowerBtn" class="btn-modern btn-modern-secondary">
+                     <button id="slowerBtn" class="btn btn-slowdown">
                        <i class="bi bi-rewind-fill"></i>
                        Zpomalit
                      </button>
@@ -2178,6 +2281,58 @@
   }
   <!-- Drag & drop kód (pokud ho máte) -->
       document.querySelectorAll(".draggable-panel").forEach(makeDraggable);
+
+
+
+      // Enhanced control panel dragging
+      const controls = document.getElementById('controls');
+      let isDragging = false;
+      let startX, startY, startLeft, startTop;
+
+      controls?.addEventListener('mousedown', (e) => {
+        if (e.target.tagName === 'BUTTON') return; // Don't drag when clicking buttons
+        
+        isDragging = true;
+        startX = e.clientX;
+        startY = e.clientY;
+        startLeft = parseInt(window.getComputedStyle(controls).left, 10);
+        startTop = parseInt(window.getComputedStyle(controls).top, 10);
+        
+        controls.classList.add('dragging');
+        document.addEventListener('mousemove', handleControlDrag);
+        document.addEventListener('mouseup', stopControlDrag);
+        e.preventDefault();
+      });
+
+      function handleControlDrag(e) {
+        if (!isDragging) return;
+        
+        const deltaX = e.clientX - startX;
+        const deltaY = e.clientY - startY;
+        
+        const newLeft = startLeft + deltaX;
+        const newTop = startTop + deltaY;
+        
+        // Keep panel within viewport bounds
+        const mapWrapper = document.getElementById('map-wrapper');
+        const mapRect = mapWrapper.getBoundingClientRect();
+        const panelRect = controls.getBoundingClientRect();
+        
+        const maxLeft = mapRect.width - panelRect.width;
+        const maxTop = mapRect.height - panelRect.height;
+        
+        controls.style.left = Math.max(0, Math.min(newLeft, maxLeft)) + 'px';
+        controls.style.top = Math.max(0, Math.min(newTop, maxTop)) + 'px';
+        controls.style.bottom = 'auto';
+        controls.style.transform = 'none';
+      }
+
+      function stopControlDrag() {
+        isDragging = false;
+        controls.classList.remove('dragging');
+        document.removeEventListener('mousemove', handleControlDrag);
+        document.removeEventListener('mouseup', stopControlDrag);
+      }
    </script>
    <script>
 /* TENHLE BLOK DEJ TĚSNĚ PŘED </body>  NEBO HO OBAĽ do DOMContentLoaded */
