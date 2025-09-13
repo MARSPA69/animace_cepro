@@ -40,9 +40,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Tabler Icons -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons@latest/icons-sprite.svg">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons@latest/icons-sprite.css">
+    <!-- Tabler Icons - Removed due to MIME type issues -->
     <!--end::Fonts-->
     <!--begin::Third Party Plugin(OverlayScrollbars)-->
     <link
@@ -116,10 +114,18 @@
         user-select: none;
         background: linear-gradient(135deg, #333333 0%, #2d2d2d 100%) !important;
         border-bottom: 1px solid #404040 !important;
+        min-height: 60px;
+        padding: 12px 16px;
       }
 
       .draggable-header:hover {
         background: linear-gradient(135deg, #404040 0%, #333333 100%) !important;
+      }
+
+      .draggable-header .card-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #ffffff !important;
       }
 
       /* Collapsible Functionality */
@@ -129,6 +135,14 @@
 
       .card.collapsed {
         transition: all 0.3s ease;
+        min-height: 60px;
+        max-height: 60px;
+        overflow: hidden;
+      }
+
+      .card.collapsed .draggable-header {
+        min-height: 60px;
+        border-radius: 12px 12px 0 0;
       }
 
       .collapse-toggle {
@@ -169,6 +183,23 @@
         background: rgba(37, 99, 235, 0.1);
         border: 2px dashed #2563eb;
         border-radius: 8px;
+      }
+
+      /* Flexible Layout for Collapsed Boxes */
+      .connectedSortable {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        min-height: 200px;
+      }
+
+      .card.collapsed {
+        flex-shrink: 0;
+        margin-bottom: 0 !important;
+      }
+
+      .card:not(.collapsed) {
+        flex: 1;
       }
 
       /* Global Button Styles - uiverse.io inspired */
@@ -1853,17 +1884,17 @@
               <!-- 7/12 široký sloupec s grafem -->
               <div class="col-lg-7 connectedSortable">
                <div class="card mb-4 draggable-card" data-card-id="incidents-overview">
-                <div class="card-header draggable-header">
-                 <h3 class="card-title">Přehled incidentů</h3>
-                 <div class="card-tools">
+                <div class="card-header draggable-header" style="display: flex; justify-content: center; align-items: center; position: relative;">
+                 <h3 class="card-title" style="margin: 0;">Přehled incidentů</h3>
+                 <div class="card-tools" style="position: absolute; right: 16px;">
                   <button id="loadIncidentsBtn" class="btn btn-sm btn-outline-primary">
                   Aktualizovat
                   </button>
-                  <button type="button" class="btn btn-tool collapse-toggle" data-card-id="incidents-overview">
+                 </div>
+                 <button type="button" class="btn btn-tool collapse-toggle" data-card-id="incidents-overview" style="position: absolute; left: 16px;">
                     <i class="bi bi-plus-lg expand-icon"></i>
                     <i class="bi bi-dash-lg collapse-icon" style="display: none;"></i>
                   </button>
-                 </div>
                 </div>
                 <div class="card-body">
                   <div id="revenue-chart" style="height:350px;"></div>
@@ -1874,14 +1905,12 @@
                <!-- 5/12 široký sloupec s obrázkem -->
                <div class="col-lg-5 connectedSortable">
                 <div class="card bg-dark text-white border-dark mb-4 draggable-card" data-card-id="map-segments">
-                 <div class="card-header border-0 draggable-header">
-                   <h3 class="card-title">Mapa segmentů a kotev</h3>
-                   <div class="card-tools">
-                     <button type="button" class="btn btn-tool collapse-toggle" data-card-id="map-segments">
+                 <div class="card-header border-0 draggable-header" style="display: flex; justify-content: center; align-items: center; position: relative;">
+                   <h3 class="card-title" style="margin: 0;">Mapa segmentů a kotev</h3>
+                   <button type="button" class="btn btn-tool collapse-toggle" data-card-id="map-segments" style="position: absolute; left: 16px;">
                        <i class="bi bi-plus-lg expand-icon"></i>
                        <i class="bi bi-dash-lg collapse-icon" style="display: none;"></i>
                       </button>
-                     </div>
                     </div>
                     <div class="card-body text-center">
                      <img
@@ -1894,253 +1923,7 @@
                   </div>
                  </div>
                  <!--end::Row-->
-                <!-- DIRECT CHAT -->
-                <div class="card direct-chat direct-chat-primary mb-4 draggable-card" data-card-id="communication-online">
-                  <div class="card-header draggable-header">
-                    <h3 class="card-title">Komunikace online</h3>
-                    <div class="card-tools">
-                      <span title="3 New Messages" class="badge text-bg-primary"> 3 </span>
-                      <button type="button" class="btn btn-tool collapse-toggle" data-card-id="communication-online">
-                        <i class="bi bi-plus-lg expand-icon"></i>
-                        <i class="bi bi-dash-lg collapse-icon" style="display: none;"></i>
-                      </button>
-                      <button
-                        type="button"
-                        class="btn btn-tool"
-                        title="Interní kontakty"
-                        data-lte-toggle="chat-pane"
-                      >
-                        <i class="bi bi-chat-text-fill"></i>
-                      </button>
-                      <button type="button" class="btn btn-tool" data-lte-toggle="card-remove">
-                        <i class="bi bi-x-lg"></i>
-                      </button>
-                    </div>
-                  </div>
-                  <!-- /.card-header -->
-                  <div class="card-body">
-                    <!-- Conversations are loaded here -->
-                    <div class="direct-chat-messages">
-                      <!-- Message. Default to the start -->
-                      <div class="direct-chat-msg">
-                        <div class="direct-chat-infos clearfix">
-                          <span class="direct-chat-name float-start"> Administrator - Martin Špaňo </span>
-                          <span class="direct-chat-timestamp float-end">-</span>
-                        </div>
-                        <img
-                          class="direct-chat-img"
-                          src="./assets/img/user3-128x128.png"
-                          alt="Admin avatar"
-                        />
-                        <div class="direct-chat-text">
-                        </div>
-                        <!-- /.direct-chat-text -->
-                      </div>
-                      <!-- /.direct-chat-msg -->
-                      <!-- Message to the end -->
-                      <div class="direct-chat-msg end">
-                        <div class="direct-chat-infos clearfix">
-                          <span class="direct-chat-name float-end"> Operátor-P.Vacek </span>
-                          <span class="direct-chat-timestamp float-start">-</span>
-                        </div>
-                        <img
-                          class="direct-chat-img"
-                          src="./assets/img/avatar4.png"
-                          alt="Operátor avatar"
-                        />
-                        <div class="direct-chat-text"></div>
-                      </div>
-                      <!-- /.direct-chat-msg -->
-                      <!-- Message. Default to the start -->
-                      <div class="direct-chat-msg">
-                        <div class="direct-chat-infos clearfix">
-                          <span class="direct-chat-name float-start"> Administrator - Martin Špaňo </span>
-                          <span class="direct-chat-timestamp float-end">-</span>
-                        </div>
-                        <!-- /.direct-chat-infos -->
-                        <img
-                          class="direct-chat-img"
-                          src="./assets/img/user3-128x128.png"
-                          alt="message user image"
-                        />
-                        <!-- /.direct-chat-img -->
-                        <div class="direct-chat-text">
-                          Máte ten incident pod kontrolou?
-                        </div>
-                        <!-- /.direct-chat-text -->
-                      </div>
-                      <!-- /.direct-chat-msg -->
-                      <!-- Message to the end -->
-                      <div class="direct-chat-msg end">
-                        <div class="direct-chat-infos clearfix">
-                          <span class="direct-chat-name float-end"> Operátor-P.Vacek </span>
-                          <span class="direct-chat-timestamp float-start">-</span>
-                        </div>
-                        <!-- /.direct-chat-infos -->
-                        <img
-                          class="direct-chat-img"
-                          src="./assets/img/avatar4.png"
-                          alt="message user image"
-                        />
-                        <!-- /.direct-chat-img -->
-                        <div class="direct-chat-text">Ano máme</div>
-                        <!-- /.direct-chat-text -->
-                      </div>
-                      <!-- /.direct-chat-msg -->
-                    </div>
-                    <!-- /.direct-chat-messages-->
-                    <!-- Contacts are loaded here -->
-                    <div class="direct-chat-contacts">
-                      <ul class="contacts-list">
-                        <li>
-                          <a href="#">
-                            <img
-                              class="contacts-list-img"
-                              src="./assets/img/user1-128x128.jpg"
-                              alt="User Avatar"
-                            />
-                            <div class="contacts-list-info">
-                              <span class="contacts-list-name">
-                                Count Dracula
-                                <small class="contacts-list-date float-end"> 2/28/2023 </small>
-                              </span>
-                              <span class="contacts-list-msg"> How have you been? I was... </span>
-                            </div>
-                            <!-- /.contacts-list-info -->
-                          </a>
-                        </li>
-                        <!-- End Contact Item -->
-                        <li>
-                          <a href="#">
-                            <img
-                              class="contacts-list-img"
-                              src="./assets/img/user7-128x128.jpg"
-                              alt="User Avatar"
-                            />
-                            <div class="contacts-list-info">
-                              <span class="contacts-list-name">
-                                Sarah Doe
-                                <small class="contacts-list-date float-end"> 2/23/2023 </small>
-                              </span>
-                              <span class="contacts-list-msg"> I will be waiting for... </span>
-                            </div>
-                            <!-- /.contacts-list-info -->
-                          </a>
-                        </li>
-                        <!-- End Contact Item -->
-                        <li>
-                          <a href="#">
-                            <img
-                              class="contacts-list-img"
-                              src="./assets/img/user3-128x128.jpg"
-                              alt="User Avatar"
-                            />
-                            <div class="contacts-list-info">
-                              <span class="contacts-list-name">
-                                Nadia Jolie
-                                <small class="contacts-list-date float-end"> 2/20/2023 </small>
-                              </span>
-                              <span class="contacts-list-msg"> I'll call you back at... </span>
-                            </div>
-                            <!-- /.contacts-list-info -->
-                          </a>
-                        </li>
-                        <!-- End Contact Item -->
-                        <li>
-                          <a href="#">
-                            <img
-                              class="contacts-list-img"
-                              src="./assets/img/user5-128x128.jpg"
-                              alt="User Avatar"
-                            />
-                            <div class="contacts-list-info">
-                              <span class="contacts-list-name">
-                                Nora S. Vans
-                                <small class="contacts-list-date float-end"> 2/10/2023 </small>
-                              </span>
-                              <span class="contacts-list-msg"> Where is your new... </span>
-                            </div>
-                            <!-- /.contacts-list-info -->
-                          </a>
-                        </li>
-                        <!-- End Contact Item -->
-                        <li>
-                          <a href="#">
-                            <img
-                              class="contacts-list-img"
-                              src="./assets/img/user6-128x128.jpg"
-                              alt="User Avatar"
-                            />
-                            <div class="contacts-list-info">
-                              <span class="contacts-list-name">
-                                John K.
-                                <small class="contacts-list-date float-end"> 1/27/2023 </small>
-                              </span>
-                              <span class="contacts-list-msg"> Can I take a look at... </span>
-                            </div>
-                            <!-- /.contacts-list-info -->
-                          </a>
-                        </li>
-                        <!-- End Contact Item -->
-                        <li>
-                          <a href="#">
-                            <img
-                              class="contacts-list-img"
-                              src="./assets/img/user8-128x128.jpg"
-                              alt="User Avatar"
-                            />
-                            <div class="contacts-list-info">
-                              <span class="contacts-list-name">
-                                Kenneth M.
-                                <small class="contacts-list-date float-end"> 1/4/2023 </small>
-                              </span>
-                              <span class="contacts-list-msg"> Never mind I found... </span>
-                            </div>
-                            <!-- /.contacts-list-info -->
-                          </a>
-                        </li>
-                        <!-- End Contact Item -->
-                      </ul>
-                      <!-- /.contacts-list -->
-                    </div>
-                    <!-- /.direct-chat-pane -->
-                  </div>
-                  <!-- /.card-body -->
-                  <div class="card-footer">
-                    <form action="#" method="post">
-                      <div class="input-group">
-                        <input
-                          type="text"
-                          name="message"
-                          placeholder="Type Message ..."
-                          class="form-control"
-                        />
-                        <span class="input-group-append">
-                          <button type="button" class="btn btn-primary">Send</button>
-                        </span>
-                      </div>
-                    </form>
-                  </div>
-                  <!-- /.card-footer-->
-                </div>
-                <!-- /.direct-chat -->
               </div>
-                    <!--begin::Row-->
-                    <div class="row">
-                      <div class="col-4 text-center">
-                        <div id="sparkline-1" class="text-dark"></div>
-                        <div class="text-white">Visitors</div>
-                      </div>
-                      <div class="col-4 text-center">
-                        <div id="sparkline-2" class="text-dark"></div>
-                        <div class="text-white">Online</div>
-                      </div>
-                      <div class="col-4 text-center">
-                        <div id="sparkline-3" class="text-dark"></div>
-                        <div class="text-white">Sales</div>
-                      </div>
-                    </div>
-                    <!--end::Row-->
                   </div>
                 </div>
               </div>
@@ -2397,120 +2180,160 @@
 
       // Dashboard Cards - Collapsible and Draggable Functionality
       
-      // Collapsible functionality
-      document.querySelectorAll('.collapse-toggle').forEach(button => {
-        button.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const cardId = button.getAttribute('data-card-id');
-          const card = document.querySelector(`[data-card-id="${cardId}"]`);
-          const expandIcon = button.querySelector('.expand-icon');
-          const collapseIcon = button.querySelector('.collapse-icon');
+      // Wait for DOM to be fully loaded
+      document.addEventListener('DOMContentLoaded', function() {
+        console.log('DOM loaded, initializing dashboard functionality...');
+        
+        // Collapsible functionality
+        const toggleButtons = document.querySelectorAll('.collapse-toggle');
+        console.log('Found toggle buttons:', toggleButtons.length);
+        
+        toggleButtons.forEach(button => {
+          button.addEventListener('click', (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            
+            const cardId = button.getAttribute('data-card-id');
+            const card = document.querySelector(`[data-card-id="${cardId}"]`);
+            const expandIcon = button.querySelector('.expand-icon');
+            const collapseIcon = button.querySelector('.collapse-icon');
+            
+            console.log('Toggle clicked for card:', cardId); // Debug log
+            
+            if (card && expandIcon && collapseIcon) {
+              if (card.classList.contains('collapsed')) {
+                // Expand
+                card.classList.remove('collapsed');
+                expandIcon.style.display = 'none';
+                collapseIcon.style.display = 'inline';
+                console.log('Expanded card:', cardId);
+              } else {
+                // Collapse
+                card.classList.add('collapsed');
+                expandIcon.style.display = 'inline';
+                collapseIcon.style.display = 'none';
+                console.log('Collapsed card:', cardId);
+              }
+            }
+          });
+        });
+      });
+
+        // Enhanced Draggable functionality
+        let draggedElement = null;
+        let draggedFromColumn = null;
+        let isDragging = false;
+
+        const draggableCards = document.querySelectorAll('.draggable-card');
+        console.log('Found draggable cards:', draggableCards.length);
+        
+        draggableCards.forEach(card => {
+          const header = card.querySelector('.draggable-header');
           
-          if (card.classList.contains('collapsed')) {
-            // Expand
-            card.classList.remove('collapsed');
-            expandIcon.style.display = 'none';
-            collapseIcon.style.display = 'inline';
-          } else {
-            // Collapse
-            card.classList.add('collapsed');
-            expandIcon.style.display = 'inline';
-            collapseIcon.style.display = 'none';
+          header.addEventListener('mousedown', (e) => {
+            // Don't start drag if clicking on buttons
+            if (e.target.closest('button')) {
+              console.log('Button clicked, not starting drag');
+              return;
+            }
+            
+            console.log('Starting drag for card:', card.getAttribute('data-card-id'));
+            isDragging = false;
+            draggedElement = card;
+            draggedFromColumn = card.closest('.connectedSortable');
+            
+            // Add visual feedback immediately
+            card.style.cursor = 'grabbing';
+            
+            e.preventDefault();
+          });
+
+          header.addEventListener('mousemove', (e) => {
+            if (draggedElement === card && !isDragging) {
+              console.log('Starting drag movement for card:', card.getAttribute('data-card-id'));
+              isDragging = true;
+              card.classList.add('dragging');
+              
+              // Create a ghost element for visual feedback
+              const ghost = card.cloneNode(true);
+              ghost.style.position = 'absolute';
+              ghost.style.pointerEvents = 'none';
+              ghost.style.opacity = '0.7';
+              ghost.style.zIndex = '1000';
+              ghost.style.transform = 'rotate(2deg)';
+              document.body.appendChild(ghost);
+              
+              const rect = card.getBoundingClientRect();
+              ghost.style.left = rect.left + 'px';
+              ghost.style.top = rect.top + 'px';
+              ghost.style.width = rect.width + 'px';
+              ghost.style.height = rect.height + 'px';
+            }
+          });
+        });
+
+        // Handle mouse move for dragging
+        document.addEventListener('mousemove', (e) => {
+          if (!draggedElement || !isDragging) return;
+          
+          console.log('Mouse move during drag');
+          
+          const ghost = document.body.querySelector('.draggable-card[style*="position: absolute"]');
+          if (ghost) {
+            ghost.style.left = e.clientX - 50 + 'px';
+            ghost.style.top = e.clientY - 20 + 'px';
           }
+          
+          // Check for drop zones
+          const dropZones = document.querySelectorAll('.connectedSortable');
+          dropZones.forEach(zone => {
+            const rect = zone.getBoundingClientRect();
+            if (e.clientX >= rect.left && e.clientX <= rect.right && 
+                e.clientY >= rect.top && e.clientY <= rect.bottom) {
+              zone.classList.add('drag-over');
+            } else {
+              zone.classList.remove('drag-over');
+            }
+          });
         });
-      });
 
-      // Draggable functionality
-      let draggedElement = null;
-      let draggedFromColumn = null;
-
-      document.querySelectorAll('.draggable-card').forEach(card => {
-        const header = card.querySelector('.draggable-header');
-        
-        header.addEventListener('mousedown', (e) => {
-          // Don't start drag if clicking on buttons
-          if (e.target.closest('button')) return;
+        // Handle mouse up to complete drag
+        document.addEventListener('mouseup', (e) => {
+          if (!draggedElement) return;
           
-          draggedElement = card;
-          draggedFromColumn = card.closest('.connectedSortable');
-          card.classList.add('dragging');
+          const dropZones = document.querySelectorAll('.connectedSortable');
+          let droppedInZone = null;
           
-          // Create a ghost element for visual feedback
-          const ghost = card.cloneNode(true);
-          ghost.style.position = 'absolute';
-          ghost.style.pointerEvents = 'none';
-          ghost.style.opacity = '0.5';
-          ghost.style.zIndex = '1000';
-          document.body.appendChild(ghost);
-          
-          const rect = card.getBoundingClientRect();
-          ghost.style.left = rect.left + 'px';
-          ghost.style.top = rect.top + 'px';
-          ghost.style.width = rect.width + 'px';
-          ghost.style.height = rect.height + 'px';
-          
-          e.preventDefault();
-        });
-      });
-
-      // Handle mouse move for dragging
-      document.addEventListener('mousemove', (e) => {
-        if (!draggedElement) return;
-        
-        const ghost = document.body.querySelector('.draggable-card.dragging').nextElementSibling;
-        if (ghost) {
-          ghost.style.left = e.clientX - 50 + 'px';
-          ghost.style.top = e.clientY - 20 + 'px';
-        }
-        
-        // Check for drop zones
-        const dropZones = document.querySelectorAll('.connectedSortable');
-        dropZones.forEach(zone => {
-          const rect = zone.getBoundingClientRect();
-          if (e.clientX >= rect.left && e.clientX <= rect.right && 
-              e.clientY >= rect.top && e.clientY <= rect.bottom) {
-            zone.classList.add('drag-over');
-          } else {
+          dropZones.forEach(zone => {
+            const rect = zone.getBoundingClientRect();
+            if (e.clientX >= rect.left && e.clientX <= rect.right && 
+                e.clientY >= rect.top && e.clientY <= rect.bottom) {
+              droppedInZone = zone;
+            }
             zone.classList.remove('drag-over');
+          });
+          
+          if (droppedInZone && droppedInZone !== draggedFromColumn) {
+            // Move the card to the new column
+            droppedInZone.appendChild(draggedElement);
           }
-        });
-      });
-
-      // Handle mouse up to complete drag
-      document.addEventListener('mouseup', (e) => {
-        if (!draggedElement) return;
-        
-        const dropZones = document.querySelectorAll('.connectedSortable');
-        let droppedInZone = null;
-        
-        dropZones.forEach(zone => {
-          const rect = zone.getBoundingClientRect();
-          if (e.clientX >= rect.left && e.clientX <= rect.right && 
-              e.clientY >= rect.top && e.clientY <= rect.bottom) {
-            droppedInZone = zone;
+          
+          // Clean up
+          draggedElement.classList.remove('dragging');
+          draggedElement.style.cursor = 'move';
+          const ghost = document.body.querySelector('.draggable-card[style*="position: absolute"]');
+          if (ghost) {
+            ghost.remove();
           }
-          zone.classList.remove('drag-over');
-        });
+          
+          draggedElement = null;
+          draggedFromColumn = null;
+          isDragging = false;
         
-        if (droppedInZone && droppedInZone !== draggedFromColumn) {
-          // Move the card to the new column
-          droppedInZone.appendChild(draggedElement);
-        }
-        
-        // Clean up
-        draggedElement.classList.remove('dragging');
-        const ghost = document.body.querySelector('.draggable-card[style*="position: absolute"]');
-        if (ghost) {
-          ghost.remove();
-        }
-        
-        draggedElement = null;
-        draggedFromColumn = null;
-      });
+      }); // End of DOMContentLoaded
 
       // Enhanced control panel dragging
       const controls = document.getElementById('controls');
-      let isDragging = false;
       let startX, startY, startLeft, startTop;
 
       controls?.addEventListener('mousedown', (e) => {
