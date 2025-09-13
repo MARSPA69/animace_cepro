@@ -761,8 +761,8 @@ if (!CROSS_MODE) {
 
 // --- ALWAYS UPDATE CROSSING PANEL ---
 console.log("🔍 Starting panel update, pos:", pos.lat, pos.lng, "baseRow:", baseRow?.ts);
-const panelElement = document.getElementById('crossingPanelContent');
-console.log("🔍 Looking for panel element with ID 'crossingPanelContent'");
+const panelElement = document.getElementById('crossLogPanel');
+console.log("🔍 Looking for panel element with ID 'crossLogPanel'");
 console.log("🔍 Panel element found:", panelElement ? "YES" : "NO");
 if (panelElement) {
   console.log("✅ Panel element found, current content:", panelElement.innerHTML);
@@ -822,7 +822,7 @@ if (panelElement) {
   
   // Verify the update actually worked
   setTimeout(() => {
-    const verifyElement = document.getElementById('crossingPanelContent');
+    const verifyElement = document.getElementById('crossLogPanel');
     if (verifyElement) {
       console.log("🔍 Verification - Panel content after update:", verifyElement.innerHTML);
       if (verifyElement.innerHTML.includes('Křižovatka 1: A/B/F')) {
@@ -833,7 +833,7 @@ if (panelElement) {
     }
   }, 100);
 } else {
-  console.log("❌ crossingPanelContent element not found!");
+  console.log("❌ crossLogPanel element not found!");
   console.log("🔍 Available elements with 'cross' in ID:", document.querySelectorAll('[id*="cross"]').length);
   console.log("🔍 All elements with 'cross' in ID:", document.querySelectorAll('[id*="cross"]'));
   console.log("🔍 Available elements with 'panel' in ID:", document.querySelectorAll('[id*="panel"]').length);
@@ -842,7 +842,7 @@ if (panelElement) {
 
 // --- DEBUG: vždycky piš do CrossLogPanel ---
 (function updateCrossPanel() {
-  const panel = document.getElementById('crossingPanelContent');
+  const panel = document.getElementById('crossLogPanel');
   if (!panel) return;
 
   // Calculate distances to all crossings

@@ -394,6 +394,11 @@ function getDistToSmallPoly(point) {
   L.geoJSON(bigPoly,       { color:'#dc3545', weight:3, dashArray:'5,10', fillOpacity:0 }).bindPopup('Zakázaná zóna').addTo(map);
 
 // --- CROSSING DEBUG PANEL ---
+(function initCrossLogPanel() {
+  if (!window.leafletMap) {
+    console.error("❌ Map object není ještě dostupný – panel nevytvořen");
+    return;
+  }
 const crossLogPanel = L.control({position:'topright'});
 crossLogPanel.onAdd = function() {
   console.log("🔧 Creating crossLogPanel element");
@@ -412,7 +417,7 @@ crossLogPanel.onAdd = function() {
   console.log("✅ crossLogPanel element created with ID:", div.id);
   return div;
 };
-crossLogPanel.addTo(map);
+crossLogPanel.addTo(window.leafletMap);
 console.log("✅ CrossLogPanel added to map, element ID:", document.getElementById('crossLogPanel') ? 'found' : 'not found');
 
 // Test if panel is accessible after adding to map
@@ -445,7 +450,8 @@ window.testCrossingPanel = function() {
   } else {
     console.log("❌ Panel not found for manual test");
   }
-};
+  };
+})();
 
 // --- zdroje dat z <script> datasetů ---
 function getMeshSrc() {

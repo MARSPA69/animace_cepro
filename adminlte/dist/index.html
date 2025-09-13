@@ -1830,51 +1830,6 @@
                   <div id="map-wrapper" class="card-body" style="position:relative; padding:0;">
                     <div id="leafletMap" style="width:100%; height:100%; min-height:400px;"></div>
                     
-                    <!-- New Visible Crossing Panel -->
-                    <div id="visibleCrossingPanel" style="
-                      position: absolute;
-                      top: 50%;
-                      right: 20px;
-                      transform: translateY(-50%);
-                      background: rgba(255, 255, 255, 0.95);
-                      border: 2px solid #007bff;
-                      border-radius: 12px;
-                      padding: 15px;
-                      min-width: 250px;
-                      max-width: 300px;
-                      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-                      font-family: 'Inter', sans-serif;
-                      font-size: 13px;
-                      line-height: 1.4;
-                      z-index: 1000;
-                      backdrop-filter: blur(10px);
-                    ">
-                      <div style="font-weight: bold; color: #007bff; margin-bottom: 10px; text-align: center;">
-                        CROSS INFO PANEL
-                      </div>
-                      <div id="crossingPanelContent">
-                        <b>Křižovatka 1: A/B/F</b><br>
-                        DIST-TO-CROSS: 0m<br><br>
-                        <b>Křižovatka 2: G/B/B_mezzanin</b><br>
-                        DIST-TO-CROSS: 0m<br><br>
-                        v=0.00m/s<br>
-                        ID kotev: 0<br>
-                        Count: 0
-                      </div>
-                      
-                      <script>
-                        // Test if panel is created correctly
-                        document.addEventListener('DOMContentLoaded', function() {
-                          const panel = document.getElementById('crossingPanelContent');
-                          if (panel) {
-                            console.log("✅ HTML Panel created successfully:", panel);
-                            console.log("✅ Panel content:", panel.innerHTML);
-                          } else {
-                            console.log("❌ HTML Panel not found!");
-                          }
-                        });
-                      </script>
-                    </div>
                     <div id="map-controls" style="
                       position: absolute;
                       bottom: 10px;
