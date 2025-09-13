@@ -99,78 +99,6 @@
         color: #ffffff !important;
       }
 
-      /* Draggable Cards */
-      .draggable-card {
-        cursor: move;
-        transition: all 0.2s ease;
-        position: relative;
-      }
-
-      .draggable-card:hover {
-        box-shadow: 0 6px 16px rgba(0,0,0,0.3) !important;
-        transform: translateY(-2px);
-      }
-
-      .draggable-header {
-        cursor: move;
-        user-select: none;
-        background: linear-gradient(135deg, #333333 0%, #2d2d2d 100%) !important;
-        border-bottom: 1px solid #404040 !important;
-      }
-
-      .draggable-header:hover {
-        background: linear-gradient(135deg, #404040 0%, #333333 100%) !important;
-      }
-
-      /* Collapsible Functionality */
-      .card.collapsed .card-body {
-        display: none !important;
-      }
-
-      .card.collapsed {
-        transition: all 0.3s ease;
-      }
-
-      .collapse-toggle {
-        background: rgba(255, 255, 255, 0.1) !important;
-        border: 1px solid rgba(255, 255, 255, 0.2) !important;
-        border-radius: 6px !important;
-        color: #ffffff !important;
-        transition: all 0.2s ease !important;
-        width: 32px !important;
-        height: 32px !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        padding: 0 !important;
-      }
-
-      .collapse-toggle:hover {
-        background: rgba(255, 255, 255, 0.2) !important;
-        border-color: rgba(255, 255, 255, 0.3) !important;
-        transform: scale(1.05) !important;
-      }
-
-      .collapse-toggle i {
-        font-size: 14px !important;
-        transition: all 0.2s ease !important;
-      }
-
-      /* Dragging State */
-      .draggable-card.dragging {
-        opacity: 0.8;
-        transform: rotate(2deg);
-        z-index: 1000;
-        box-shadow: 0 8px 20px rgba(0,0,0,0.4) !important;
-      }
-
-      /* Drop Zone Highlight */
-      .connectedSortable.drag-over {
-        background: rgba(37, 99, 235, 0.1);
-        border: 2px dashed #2563eb;
-        border-radius: 8px;
-      }
-
       /* Global Button Styles - uiverse.io inspired */
       .btn {
         font-family: 'Inter', sans-serif;
@@ -1852,16 +1780,12 @@
             <div class="row">
               <!-- 7/12 široký sloupec s grafem -->
               <div class="col-lg-7 connectedSortable">
-               <div class="card mb-4 draggable-card" data-card-id="incidents-overview">
-                <div class="card-header draggable-header">
+               <div class="card mb-4">
+                <div class="card-header">
                  <h3 class="card-title">Přehled incidentů</h3>
                  <div class="card-tools">
                   <button id="loadIncidentsBtn" class="btn btn-sm btn-outline-primary">
                   Aktualizovat
-                  </button>
-                  <button type="button" class="btn btn-tool collapse-toggle" data-card-id="incidents-overview">
-                    <i class="bi bi-plus-lg expand-icon"></i>
-                    <i class="bi bi-dash-lg collapse-icon" style="display: none;"></i>
                   </button>
                  </div>
                 </div>
@@ -1873,13 +1797,13 @@
                </div>
                <!-- 5/12 široký sloupec s obrázkem -->
                <div class="col-lg-5 connectedSortable">
-                <div class="card bg-dark text-white border-dark mb-4 draggable-card" data-card-id="map-segments">
-                 <div class="card-header border-0 draggable-header">
+                <div class="card bg-dark text-white border-dark mb-4">
+                 <div class="card-header border-0">
                    <h3 class="card-title">Mapa segmentů a kotev</h3>
                    <div class="card-tools">
-                     <button type="button" class="btn btn-tool collapse-toggle" data-card-id="map-segments">
-                       <i class="bi bi-plus-lg expand-icon"></i>
-                       <i class="bi bi-dash-lg collapse-icon" style="display: none;"></i>
+                     <button type="button" class="btn btn-dark btn-sm" data-lte-toggle="card-collapse">
+                       <i data-lte-icon="expand" class="bi bi-plus-lg"></i>
+                       <i data-lte-icon="collapse" class="bi bi-dash-lg"></i>
                       </button>
                      </div>
                     </div>
@@ -1895,14 +1819,14 @@
                  </div>
                  <!--end::Row-->
                 <!-- DIRECT CHAT -->
-                <div class="card direct-chat direct-chat-primary mb-4 draggable-card" data-card-id="communication-online">
-                  <div class="card-header draggable-header">
+                <div class="card direct-chat direct-chat-primary mb-4">
+                  <div class="card-header">
                     <h3 class="card-title">Komunikace online</h3>
                     <div class="card-tools">
                       <span title="3 New Messages" class="badge text-bg-primary"> 3 </span>
-                      <button type="button" class="btn btn-tool collapse-toggle" data-card-id="communication-online">
-                        <i class="bi bi-plus-lg expand-icon"></i>
-                        <i class="bi bi-dash-lg collapse-icon" style="display: none;"></i>
+                      <button type="button" class="btn btn-tool" data-lte-toggle="card-collapse">
+                        <i data-lte-icon="expand" class="bi bi-plus-lg"></i>
+                        <i data-lte-icon="collapse" class="bi bi-dash-lg"></i>
                       </button>
                       <button
                         type="button"
@@ -2394,119 +2318,6 @@
       document.querySelectorAll(".draggable-panel").forEach(makeDraggable);
 
 
-
-      // Dashboard Cards - Collapsible and Draggable Functionality
-      
-      // Collapsible functionality
-      document.querySelectorAll('.collapse-toggle').forEach(button => {
-        button.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const cardId = button.getAttribute('data-card-id');
-          const card = document.querySelector(`[data-card-id="${cardId}"]`);
-          const expandIcon = button.querySelector('.expand-icon');
-          const collapseIcon = button.querySelector('.collapse-icon');
-          
-          if (card.classList.contains('collapsed')) {
-            // Expand
-            card.classList.remove('collapsed');
-            expandIcon.style.display = 'none';
-            collapseIcon.style.display = 'inline';
-          } else {
-            // Collapse
-            card.classList.add('collapsed');
-            expandIcon.style.display = 'inline';
-            collapseIcon.style.display = 'none';
-          }
-        });
-      });
-
-      // Draggable functionality
-      let draggedElement = null;
-      let draggedFromColumn = null;
-
-      document.querySelectorAll('.draggable-card').forEach(card => {
-        const header = card.querySelector('.draggable-header');
-        
-        header.addEventListener('mousedown', (e) => {
-          // Don't start drag if clicking on buttons
-          if (e.target.closest('button')) return;
-          
-          draggedElement = card;
-          draggedFromColumn = card.closest('.connectedSortable');
-          card.classList.add('dragging');
-          
-          // Create a ghost element for visual feedback
-          const ghost = card.cloneNode(true);
-          ghost.style.position = 'absolute';
-          ghost.style.pointerEvents = 'none';
-          ghost.style.opacity = '0.5';
-          ghost.style.zIndex = '1000';
-          document.body.appendChild(ghost);
-          
-          const rect = card.getBoundingClientRect();
-          ghost.style.left = rect.left + 'px';
-          ghost.style.top = rect.top + 'px';
-          ghost.style.width = rect.width + 'px';
-          ghost.style.height = rect.height + 'px';
-          
-          e.preventDefault();
-        });
-      });
-
-      // Handle mouse move for dragging
-      document.addEventListener('mousemove', (e) => {
-        if (!draggedElement) return;
-        
-        const ghost = document.body.querySelector('.draggable-card.dragging').nextElementSibling;
-        if (ghost) {
-          ghost.style.left = e.clientX - 50 + 'px';
-          ghost.style.top = e.clientY - 20 + 'px';
-        }
-        
-        // Check for drop zones
-        const dropZones = document.querySelectorAll('.connectedSortable');
-        dropZones.forEach(zone => {
-          const rect = zone.getBoundingClientRect();
-          if (e.clientX >= rect.left && e.clientX <= rect.right && 
-              e.clientY >= rect.top && e.clientY <= rect.bottom) {
-            zone.classList.add('drag-over');
-          } else {
-            zone.classList.remove('drag-over');
-          }
-        });
-      });
-
-      // Handle mouse up to complete drag
-      document.addEventListener('mouseup', (e) => {
-        if (!draggedElement) return;
-        
-        const dropZones = document.querySelectorAll('.connectedSortable');
-        let droppedInZone = null;
-        
-        dropZones.forEach(zone => {
-          const rect = zone.getBoundingClientRect();
-          if (e.clientX >= rect.left && e.clientX <= rect.right && 
-              e.clientY >= rect.top && e.clientY <= rect.bottom) {
-            droppedInZone = zone;
-          }
-          zone.classList.remove('drag-over');
-        });
-        
-        if (droppedInZone && droppedInZone !== draggedFromColumn) {
-          // Move the card to the new column
-          droppedInZone.appendChild(draggedElement);
-        }
-        
-        // Clean up
-        draggedElement.classList.remove('dragging');
-        const ghost = document.body.querySelector('.draggable-card[style*="position: absolute"]');
-        if (ghost) {
-          ghost.remove();
-        }
-        
-        draggedElement = null;
-        draggedFromColumn = null;
-      });
 
       // Enhanced control panel dragging
       const controls = document.getElementById('controls');
