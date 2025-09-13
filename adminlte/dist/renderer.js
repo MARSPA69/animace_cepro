@@ -396,6 +396,7 @@ function getDistToSmallPoly(point) {
 // --- CROSSING DEBUG PANEL ---
 const crossLogPanel = L.control({position:'topright'});
 crossLogPanel.onAdd = function() {
+  console.log("🔧 Creating crossLogPanel element");
   const div = L.DomUtil.create('div', 'cross-panel');
   div.id = 'crossLogPanel';
   div.style.background = 'rgba(255,255,255,0.9)';
@@ -408,9 +409,43 @@ crossLogPanel.onAdd = function() {
   div.style.borderRadius = '12px';
   div.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
   div.innerHTML = '<b>Cross Debug</b><br>(zatím prázdné)';
+  console.log("✅ crossLogPanel element created with ID:", div.id);
   return div;
 };
 crossLogPanel.addTo(map);
+console.log("✅ CrossLogPanel added to map, element ID:", document.getElementById('crossLogPanel') ? 'found' : 'not found');
+
+// Test if panel is accessible after adding to map
+setTimeout(() => {
+  const testElement = document.getElementById('crossLogPanel');
+  if (testElement) {
+    console.log("✅ Panel accessible after timeout, content:", testElement.innerHTML);
+    
+    // Test if we can update the panel content
+    testElement.innerHTML = '<b>TEST UPDATE</b><br>Panel is functional!';
+    console.log("🧪 Test update applied, new content:", testElement.innerHTML);
+    
+    // Restore original content
+    setTimeout(() => {
+      testElement.innerHTML = '<b>Cross Debug</b><br>(zatím prázdné)';
+      console.log("🔄 Original content restored");
+    }, 2000);
+  } else {
+    console.log("❌ Panel not accessible after timeout");
+  }
+}, 1000);
+
+// Add global function to test panel updates
+window.testCrossingPanel = function() {
+  const panel = document.getElementById('crossLogPanel');
+  if (panel) {
+    console.log("🧪 Testing panel update...");
+    panel.innerHTML = '<b>MANUAL TEST</b><br>Panel update works!';
+    console.log("✅ Manual test successful");
+  } else {
+    console.log("❌ Panel not found for manual test");
+  }
+};
 
 // --- zdroje dat z <script> datasetů ---
 function getMeshSrc() {

@@ -729,39 +729,157 @@ const baseRow = (() => {
   return found;
 })();
 
-// --- CROSS mode handling ---
+
 // --- CROSS mode handling ---
 if (!CROSS_MODE) {
   for (const cross of CROSS_POINTS) {
     const d = haversine_m(pos.lat, pos.lng, cross.lat, cross.lng);
     const tol = (v < 1.0) ? 10 : 22;   // adaptive tolerance
+    console.log("🔍 Checking crossing", cross.name, "dist:", d.toFixed(1), "m, tolerance:", tol);
     if (d < tol) {
       CROSS_MODE = { name: cross.name, enteredAtSec: s };
-      console.log("🚦 Enter CROSS MODE:", cross.name, "at sec", s, "ts=", baseRow?.ts);
+      console.log("🚦 Enter CROSS MODE:", cross.name, "at sec", s, "ts=", baseRow?.ts, "dist:", d.toFixed(1), "m");
       latFinal = cross.lat;
       lngFinal = cross.lng;
       break;
     }
   }
+} else {
+  // Check if we're still near the crossing
+  const currentCross = CROSS_POINTS.find(c => c.name === CROSS_MODE.name);
+  if (currentCross) {
+    const d = haversine_m(pos.lat, pos.lng, currentCross.lat, currentCross.lng);
+    console.log("📍 In CROSS_MODE:", CROSS_MODE.name, "dist:", d.toFixed(1), "m");
+    
+    // Exit CROSS_MODE if we're too far away
+    if (d > 50) {
+      console.log("🚪 Exit CROSS_MODE - too far away:", d.toFixed(1), "m");
+      CROSS_MODE = null;
+    }
+  }
 }
 
+// --- ALWAYS UPDATE CROSSING PANEL ---
+console.log("🔍 Starting panel update, pos:", pos.lat, pos.lng, "baseRow:", baseRow?.ts);
+const panelElement = document.getElementById('crossingPanelContent');
+console.log("🔍 Looking for panel element with ID 'crossingPanelContent'");
+console.log("🔍 Panel element found:", panelElement ? "YES" : "NO");
+if (panelElement) {
+  console.log("✅ Panel element found, current content:", panelElement.innerHTML);
+  
+  // Calculate distances to all crossing points
+  const crossingDistances = [];
+  
+  console.log("🔍 Checking", CROSS_POINTS.length, "crossing points");
+  for (const cross of CROSS_POINTS) {
+    const d = haversine_m(pos.lat, pos.lng, cross.lat, cross.lng);
+    console.log("📍 Distance to", cross.name, ":", d.toFixed(1), "m");
+    crossingDistances.push({
+      name: cross.name,
+      distance: d,
+      lat: cross.lat,
+      lng: cross.lng
+    });
+  }
+  
+  // Sort by distance
+  crossingDistances.sort((a, b) => a.distance - b.distance);
+  
+  // Get anchor IDs from current position (from BASIC_TABLE_04062025)
+  const anchorIds = baseRow?.matched_ids || [];
+  const anchorCount = baseRow?.matched_count || 0;
+  
+  console.log("🔍 Anchor data:", "ids:", anchorIds, "count:", anchorCount);
+  
+  // Determine which crossing is active (within 10m)
+  let activeCrossing = null;
+  let anchorInfo = "0";
+  
+  for (const cross of crossingDistances) {
+    if (cross.distance <= 10) {
+      activeCrossing = cross;
+      anchorInfo = anchorIds.length > 0 ? `[${anchorIds.join(', ')}]` : "0";
+      break;
+    }
+  }
+  
+  console.log("🔄 Updating crossing panel, active:", activeCrossing?.name || "none", "anchors:", anchorIds.length);
+  
+  const panelContent = `
+    <b>Křižovatka 1: A/B/F</b><br>
+    DIST-TO-CROSS: ${crossingDistances[0]?.distance <= 10 ? crossingDistances[0].distance.toFixed(1) : "0"}m<br><br>
+    <b>Křižovatka 2: G/B/B_mezzanin</b><br>
+    DIST-TO-CROSS: ${crossingDistances[1]?.distance <= 10 ? crossingDistances[1].distance.toFixed(1) : "0"}m<br><br>
+    ts=${baseRow?.ts || "N/A"}<br>
+    v=${v.toFixed(2)}m/s<br>
+    ID kotev: ${anchorInfo}<br>
+    Count: ${activeCrossing ? anchorCount : 0}
+  `;
+  
+  console.log("📝 Panel content:", panelContent);
+  panelElement.innerHTML = panelContent;
+  console.log("✅ Panel updated successfully");
+  
+  // Verify the update actually worked
+  setTimeout(() => {
+    const verifyElement = document.getElementById('crossingPanelContent');
+    if (verifyElement) {
+      console.log("🔍 Verification - Panel content after update:", verifyElement.innerHTML);
+      if (verifyElement.innerHTML.includes('Křižovatka 1: A/B/F')) {
+        console.log("✅ Panel update verified - content is correct");
+      } else {
+        console.log("❌ Panel update failed - content is incorrect");
+      }
+    }
+  }, 100);
+} else {
+  console.log("❌ crossingPanelContent element not found!");
+  console.log("🔍 Available elements with 'cross' in ID:", document.querySelectorAll('[id*="cross"]').length);
+  console.log("🔍 All elements with 'cross' in ID:", document.querySelectorAll('[id*="cross"]'));
+  console.log("🔍 Available elements with 'panel' in ID:", document.querySelectorAll('[id*="panel"]').length);
+  console.log("🔍 All elements with 'panel' in ID:", document.querySelectorAll('[id*="panel"]'));
+}
 
+// --- DEBUG: vždycky piš do CrossLogPanel ---
+(function updateCrossPanel() {
+  const panel = document.getElementById('crossingPanelContent');
+  if (!panel) return;
+
+  // Calculate distances to all crossings
+  const crossingDistances = CROSS_POINTS.map(cross => ({
+    name: cross.name,
+    distance: haversine_m(pos.lat, pos.lng, cross.lat, cross.lng)
+  }));
+
+  // Find nearest crossing
+  const nearestCross = crossingDistances.reduce((min, cross) => 
+    cross.distance < min.distance ? cross : min
+  );
+
+  // Check if we're near any crossing (within 15m)
+  const nearCross = crossingDistances.find(c => c.distance < 15);
+  
+  // Get usable rows with anchor data
+  const proj = rows.filter(r => r.sec >= s && r.sec < s+12);
+  const usable = proj.filter(r => (r.a_ids||[]).some(x=>x));
+  const idsFlat = usable.flatMap(r => r.a_ids).filter(x=>x);
+
+  panel.innerHTML = `
+    <b>Cross Debug</b><br>
+    sec=${s}, ts=${baseRow?.ts || "—"}<br>
+    CROSS_MODE=${CROSS_MODE ? CROSS_MODE.name : "OFF"}<br>
+    Nearest=${nearestCross.name} (${nearestCross.distance.toFixed(1)}m)<br>
+    Near=${nearCross ? nearCross.name : "none"}<br>
+    usable=${usable.length}<br>
+    ids=${idsFlat.join(", ") || "—"}<br>
+    pos=${pos.lat.toFixed(6)}, ${pos.lng.toFixed(6)}
+  `;
+})();
+
+// --- CROSS MODE DECISION LOGIC ---
 if (CROSS_MODE) {
   const decision = decideAtCrossing(s, { lat: latFinal, lng: lngFinal }, baseRow);
-
-  if (document.getElementById('crossLogPanel')) {
-    // Calculate distance to crossing point for display
-    const crossPoint = CROSS_POINTS.find(cp => cp.name === CROSS_MODE.name);
-    const distToCross = crossPoint ? haversine_m(latFinal, lngFinal, crossPoint.lat, crossPoint.lng) : 0;
-    
-    document.getElementById('crossLogPanel').innerHTML = `
-      <b>CROSS ${CROSS_MODE.name}</b><br>
-      ts=${baseRow?.ts}<br>
-      d=${distToCross.toFixed(1)}m v=${v.toFixed(2)}m/s<br>
-      decision=${decision || "?"}
-    `;
-  }
-
+  
   if (decision) {
     console.log("✅ CROSS DECISION:", decision, "at sec", s);
     CROSS_MODE = null;
@@ -791,7 +909,7 @@ const rec = {
 // DEBUG for first 10 seconds
 if (s - startSec < 10) {
   console.log(
-    `[DBG] s=${s}, ts=${ts}, baseRow.ts=${baseRow?.ts}, ` +
+    `[DBG] s=${s}, ts=${baseRow?.ts}, baseRow.ts=${baseRow?.ts}, ` +
     `lat=${latFinal.toFixed(6)}, lng=${lngFinal.toFixed(6)}, speed=${rec.speed_mps}`
   );
 }
