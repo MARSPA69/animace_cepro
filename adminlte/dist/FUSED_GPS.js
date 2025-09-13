@@ -5,30 +5,35 @@
 //  - MESH_FIXEDGPS_ANCHFOOTPRINT                           (mapa M_GPS -> Footprint)
 //  - MIDAXIS.js                                            (středová osa; "koleje")
 //  - ANCHORID_TO_COMPASSANGLE.js (volitelně)               (sekvence kotev -> kompas)
+
+// Global state for tracking crossing mode - when vehicle is near intersection points
 let CROSS_MODE = null;   // null / { name, enteredAtSec }
 
 (function () {
   const EARTH_R = 6371008.8; // m
 
+  // Configuration object containing all processing parameters
   const CFG = {
-    SNAP_DISTANCE_M:    1,     // práh přiblížení k M_GPS pro test shody (použijeme i jako CROSS_EPS_M)
-    FORCE_SNAP_M:       1.0,   // (aktuálně už neskáčeme, ale nechávám pro případné ladění)
-    MATCH_THRESHOLD:    0.20,  // 20 % shody A_ID (dnes nepoužíváme k rozhodování, jen info)
-    COMPASS_WINDOW_SEC: 20,    // volitelné
-    START: { lat: 50.04389397, lng: 15.07552375, ts: "06:54:44" },
+    SNAP_DISTANCE_M:    1,     // Distance threshold for M_GPS proximity matching (also used as CROSS_EPS_M)
+    FORCE_SNAP_M:       1.0,   // (currently unused, kept for debugging purposes)
+    MATCH_THRESHOLD:    0.20,  // 20% anchor ID match threshold (currently used for info only)
+    COMPASS_WINDOW_SEC: 20,    // Optional compass calculation window
+    START: { lat: 50.04389397, lng: 15.07552375, ts: "06:54:44" }, // Starting position and time
 
-    // otočka v terminálech (slepé konce)
-    TURN_PROX_M:        3,
-    TURN_DROP_RATIO:    0.65,  // pokles vůči rolling průměru (=> otočka)
-    ROLL_WIN_SEC:       10,
-    TURN_COOLDOWN_SEC:  20,
+    // Terminal turn detection parameters (for dead-end handling)
+    TURN_PROX_M:        3,     // Proximity to terminal for turn detection
+    TURN_DROP_RATIO:    0.65,  // Speed drop ratio relative to rolling average (triggers turn)
+    ROLL_WIN_SEC:       10,    // Rolling window size for speed averaging
+    TURN_COOLDOWN_SEC:  20,    // Cooldown period after turn to prevent oscillation
 
-    // párování časů: F_GPS (1 Hz) vs tabulkové TIME (každé 3–4 s)
-    MATCH_TOL_SEC:      4,      // kolik sekund okno pro „nejbližší TIME“
-    MATCH_LOOKAHEAD_SEC: 35   // NOVÉ: dopředné okno (sekundy)
+    // Time matching parameters: F_GPS (1 Hz) vs table TIME (every 3-4 seconds)
+    MATCH_TOL_SEC:      4,      // Time window for finding nearest TIME entry
+    MATCH_LOOKAHEAD_SEC: 35   // Forward-looking window for anchor matching (seconds)
   };
 
-  // ---------- Pomůcky: čas, geo ----------
+  // ---------- Utility functions: time and geospatial calculations ----------
+  
+  // Convert HH:MM:SS time string to seconds since midnight
   function parseHmsToSec(hms) {
     if (!hms) return null;
     const s = String(hms).trim();
@@ -37,6 +42,7 @@ let CROSS_MODE = null;   // null / { name, enteredAtSec }
     return (+m[1]) * 3600 + (+m[2]) * 60 + (+m[3]);
   }
 
+  // Calculate distance between two geographic points using Haversine formula
   function haversine_m(lat1, lon1, lat2, lon2) {
     const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
     const dφ = (lat2 - lat1) * Math.PI / 180;
@@ -45,6 +51,7 @@ let CROSS_MODE = null;   // null / { name, enteredAtSec }
     return 2 * EARTH_R * Math.asin(Math.sqrt(a));
   }
 
+  // Calculate bearing (direction) from point 1 to point 2 in degrees
   function bearing_deg(lat1, lon1, lat2, lon2) {
     const φ1 = lat1 * Math.PI / 180, φ2 = lat2 * Math.PI / 180;
     const λ1 = lon1 * Math.PI / 180, λ2 = lon2 * Math.PI / 180;
@@ -55,6 +62,7 @@ let CROSS_MODE = null;   // null / { name, enteredAtSec }
     return θ;
   }
 
+  // Calculate destination point given starting position, bearing, and distance
   function destinationPoint(lat, lon, bearingDeg, distM) {
     const δ = distM / EARTH_R;
     const θ = bearingDeg * Math.PI / 180;
@@ -69,9 +77,12 @@ let CROSS_MODE = null;   // null / { name, enteredAtSec }
     return { lat: φ2 * 180 / Math.PI, lng: ((λ2 * 180 / Math.PI + 540) % 360) - 180 };
   }
 
+  // Utility function to get unique values from array
   const uniq = (arr) => [...new Set(arr)];
 
-  // ---------- Čtení struktur datasetů ----------
+  // ---------- Dataset structure reading functions ----------
+  
+  // Extract latitude/longitude from various data formats (flexible coordinate parsing)
   function getLatLng(p) {
     if (!p) return null;
     if (typeof p.lat === "number" && typeof p.lng === "number") return { lat: p.lat, lng: p.lng };
@@ -83,6 +94,7 @@ let CROSS_MODE = null;   // null / { name, enteredAtSec }
     return null;
   }
 
+  // Load and normalize M_GPS mesh data from various possible global variables
   function getMGpsList() {
     let src = [];
     if (typeof fixedGpsMesh !== "undefined") src = fixedGpsMesh;
@@ -90,26 +102,29 @@ let CROSS_MODE = null;   // null / { name, enteredAtSec }
     else if (typeof MESH_FIXED_GPS !== "undefined") src = MESH_FIXED_GPS;
     else if (window.fixedGpsMesh) src = window.fixedGpsMesh;
 
+    // Normalize mesh data structure and filter out invalid coordinates
     return (src || []).map((o, idx) => {
       const ll = getLatLng(o);
       return { id: o.id ?? o.ID ?? o.code ?? idx, lat: ll?.lat, lng: ll?.lng, raw: o, idx };
     }).filter(o => Number.isFinite(o.lat) && Number.isFinite(o.lng));
   }
-// ---------- Footprint zdroj ----------
+// ---------- Footprint data source ----------
+// Load footprint mapping data from various possible global variables
 function getFootSrc() {
-  // preferuj „velký“ název, kdyby existoval
+  // Prefer uppercase variable names first
   if (typeof MESH_FIXEDGPS_ANCHFOOTPRINT !== "undefined") return MESH_FIXEDGPS_ANCHFOOTPRINT;
   if (window.MESH_FIXEDGPS_ANCHFOOTPRINT) return window.MESH_FIXEDGPS_ANCHFOOTPRINT;
 
-  // tvoje reálná proměnná z datasetu:
+  // Try camelCase variant from dataset
   if (window.meshFixedGpsAnchFootprint) return window.meshFixedGpsAnchFootprint;
 
-  // toleruj i překlep s ANCHOR
+  // Tolerate typo with ANCHOR instead of ANCH
   if (window.MESH_FIXEDGPS_ANCHORFOOTPRINT) return window.MESH_FIXEDGPS_ANCHORFOOTPRINT;
 
   return [];
 }
 
+  // Extract speed value from table row, trying various possible field names
   function getRowSpeed(row) {
     const cands = ["SPEED", "speed", "VEL", "velocity", "v"];
     for (const k of cands) if (k in row && typeof row[k] === "number") return row[k];
@@ -117,31 +132,35 @@ function getFootSrc() {
     return 0;
   }
 
+  // Get path points from MIDAXIS data or fallback to ordered mesh points
   function getPathPoints(MGPS) {
     if (Array.isArray(window.MIDAXIS) && window.MIDAXIS.length > 1) {
+      // Use predefined MIDAXIS path (railway tracks)
       return window.MIDAXIS.map(p => {
         const lat = (typeof p.lat === 'number') ? p.lat : (typeof p.LAT === 'number' ? p.LAT : p.Y || p.y);
         const lon = (typeof p.lon === 'number') ? p.lon : (typeof p.LON === 'number' ? p.LON : p.LONG || p.X || p.x);
         return { lat, lng: lon };
       }).filter(p => Number.isFinite(p.lat) && Number.isFinite(p.lng));
     }
-    // fallback: pořadí z MESH
+    // Fallback: order mesh points as path
     return orderMeshPath(MGPS, CFG.START.lat, CFG.START.lng).map(m => ({ lat: m.lat, lng: m.lng }));
   }
 
-// ---------- Timestamp helper ----------
+// ---------- Timestamp extraction helper ----------
+// Extract timestamp from various possible formats in table rows
 function getRowTimestamp(r) {
-  if (r.TIME) return r.TIME;            // přímo z datasetu
-  if (r.ts) return r.ts;                // už vypočteno
+  if (r.TIME) return r.TIME;            // Direct from dataset
+  if (r.ts) return r.ts;                // Already computed
   if (typeof r.timestamp === 'string') {
     return r.timestamp.includes('T')
-      ? r.timestamp.slice(11, 19)       // vyřízni jen HH:MM:SS
+      ? r.timestamp.slice(11, 19)       // Extract HH:MM:SS from ISO format
       : r.timestamp;
   }
   return null;
 }
 
 
+  // Extract anchor IDs from table row, trying various field name patterns
   function readAnchors(row) {
     if (Array.isArray(row.Footprints)) {
       return uniq(row.Footprints.map(Number).filter(n => Number.isFinite(n) && n > 0));
@@ -157,7 +176,8 @@ function getRowTimestamp(r) {
     return [];
   }
 
-  // ---------- Shoda A_ID (info) ----------
+  // ---------- Anchor ID matching (informational) ----------
+  // Calculate percentage of matching anchor IDs between two sets
   function matchPercent(aIds, mIds) {
     if (!aIds.length || !mIds.length) return 0;
     const A = new Set(aIds), B = new Set(mIds);
@@ -166,13 +186,15 @@ function getRowTimestamp(r) {
     return inter / A.size;
   }
 
-  // ---------- Kompas (volitelné) ----------
+  // ---------- Compass inference (optional) ----------
+  // Infer compass direction based on anchor sequence patterns
   function inferCompassAt(timeSec, rowsBySec) {
     try {
       const bySeq = window.ANCHOR_TO_COMPASS_BY_SEQUENCE || {};
       const w = CFG.COMPASS_WINDOW_SEC;
       const seqSeen = [];
       const seen = new Set();
+      // Collect anchor sequence within time window
       for (let t = timeSec - w; t <= timeSec + w; t++) {
         const rows = rowsBySec.get(t) || [];
         const ids = uniq(rows.flatMap(readAnchors));
@@ -182,6 +204,7 @@ function getRowTimestamp(r) {
       if (bySeq[key]) return { ...bySeq[key], code: 10, sequenceKey: key };
       const keyRev = [...seqSeen].reverse().join("-");
       if (bySeq[keyRev]) return { ...bySeq[keyRev], code: 11, sequenceKey: keyRev };
+      // Try partial matches for first 3 anchors
       for (const k of Object.keys(bySeq)) {
         const arr = k.split("-").map(Number);
         if (arr.length >= 3 && key.includes(arr.slice(0, 3).join("-"))) return { ...bySeq[k], code: 10, sequenceKey: k };
@@ -191,7 +214,8 @@ function getRowTimestamp(r) {
     return null;
   }
 
-  // ---------- Dedup TIMESTAMP ----------
+  // ---------- Remove duplicate timestamps ----------
+  // Remove consecutive rows with identical timestamps to avoid processing duplicates
   function dedupRows(rawRows) {
     const rows = [];
     let prevTs = null;
@@ -205,26 +229,29 @@ function getRowTimestamp(r) {
     return rows;
   }
 
-  // ---------- Footprint vyhledání ----------
+  // ---------- Footprint lookup ----------
+  // Find footprint (anchor list) for a given mesh ID
 function footprintForId(mid, footSrc) {
   if (!footSrc) return [];
-  // Pole objektů: hledej podle vlastnosti id/ID/code
+  // Array of objects: search by id/ID/code property
   if (Array.isArray(footSrc)) {
     const hit = footSrc.find(x => x && (x.id === mid || x.ID === mid || x.code === mid));
     if (hit) return hit.Footprints || hit.Footprint || hit.anchors || [];
     return [];
   }
-  // Objektový slovník
+  // Object dictionary
   const node = footSrc[mid] || footSrc[String(mid)];
   if (node) return node.Footprints || node.Footprint || node.anchors || [];
   return [];
 }
 
 
-  // ---------- Seřazení MESH jako fallback path ----------
+  // ---------- Order mesh points as fallback path ----------
+  // Create ordered path from mesh points using nearest-neighbor algorithm
   function orderMeshPath(MGPS, startLat, startLng) {
     if (!MGPS.length) return [];
     const byId = new Map(MGPS.map(m => [m.id, m]));
+    // Find starting point closest to given coordinates
     let current = MGPS.reduce((best, m) => {
       const d = haversine_m(startLat, startLng, m.lat, m.lng);
       return (!best || d < best.d) ? { m, d } : best;
@@ -233,6 +260,7 @@ function footprintForId(mid, footSrc) {
     const ordered = [];
     unvisited.delete(current.id);
     ordered.push(current);
+    // Greedy nearest-neighbor path construction
     while (unvisited.size) {
       let next = null, bestD = Infinity;
       for (const id of unvisited) {
@@ -247,7 +275,8 @@ function footprintForId(mid, footSrc) {
     return ordered;
   }
 
-  // ---------- Nejbližší MESH bod ----------
+  // ---------- Find nearest MESH point ----------
+  // Find the closest mesh point to given coordinates
   function nearestMGPS(lat, lng, MGPS) {
     let best = null, bestD = Infinity;
     for (const m of MGPS) {
@@ -257,19 +286,23 @@ function footprintForId(mid, footSrc) {
     return { m: best, dist: bestD };
   }
 
-  // ---------- Walker po „kolejích“ ----------
+  // ---------- Path walker along "tracks" ----------
+  // Calculate segment length in meters
   function segLenM(a,b){ return haversine_m(a.lat,a.lng,b.lat,b.lng); }
 
+  // Create a walker that moves along a predefined path (railway tracks)
   function makePathWalker(path, startLat, startLng) {
     let curr={lat:startLat,lng:startLng};
-    let seg=0, t=0, dir=+1; // +1 vpřed, -1 zpět
+    let seg=0, t=0, dir=+1; // +1 forward, -1 backward
 
+    // Initialize walker position by finding nearest point on path
     (function locateNearest(){
       let best={d:Infinity, seg:0, t:0};
       for (let i=0;i<path.length-1;i++){
         const A=path[i], B=path[i+1];
         const L=segLenM(A,B);
         const br=bearing_deg(A.lat,A.lng,B.lat,B.lng);
+        // Sample 10 points along each segment to find closest
         for(let s=0;s<=10;s++){
           const tt=s/10;
           const P=destinationPoint(A.lat,A.lng,br,L*tt);
@@ -284,30 +317,35 @@ function footprintForId(mid, footSrc) {
       curr={lat:P.lat,lng:P.lng};
     })();
 
+    // Move walker by specified distance along path
     function stepOnce(remain){
       const A=path[seg], B=path[seg+1];
       const L=segLenM(A,B);
-      if (dir>0){
+      if (dir>0){ // Moving forward
         const posM=L*t, left=Math.max(0,L-posM);
         if (remain >= left-1e-6) {
+          // Move to end of current segment and advance to next
           curr={lat:B.lat,lng:B.lng};
           seg = Math.min(seg+1, path.length-2);
           t=0;
           return remain-left;
         } else {
+          // Move within current segment
           const br=bearing_deg(curr.lat,curr.lng,B.lat,B.lng);
           curr=destinationPoint(curr.lat,curr.lng,br,remain);
           t += remain/L;
           return 0;
         }
-      } else {
+      } else { // Moving backward
         const posM=L*t, left=posM;
         if (remain >= left-1e-6) {
+          // Move to start of current segment and go to previous
           curr={lat:A.lat,lng:A.lng};
           seg = Math.max(seg-1, 0);
           t= (seg===0? 0 : 1);
           return remain-left;
         } else {
+          // Move within current segment
           const br=bearing_deg(curr.lat,curr.lng,A.lat,A.lng);
           curr=destinationPoint(curr.lat,curr.lng,br,remain);
           t -= remain/L;
@@ -316,34 +354,40 @@ function footprintForId(mid, footSrc) {
       }
     }
 
+    // Main step function - move walker by distance, handling path endpoints
     function step(distM){
       let rem = distM;
       while (rem>0) {
+        // Reverse direction at path endpoints (terminal handling)
         if (dir>0 && seg===path.length-2 && t>=1-1e-6) dir=-1;
         if (dir<0 && seg===0 && t<=1e-6) dir=+1;
         const before=rem;
         rem = stepOnce(rem);
+        // Prevent infinite loops
         if (Math.abs(rem-before) < 1e-9) break;
       }
       return get();
     }
 
+    // Walker API functions
     const get = ()=>({lat:curr.lat,lng:curr.lng, seg, t, dir});
     const reverse = ()=>{ dir = -dir; };
     return { get, step, reverse, dir:()=>dir };
   }
 
-  // ---------- Uložení jednoduchého viz logu ----------
+  // ---------- Simple visualization log download ----------
+  // Download processed GPS data as JSON file for analysis
   function downloadFusedLog(filename) {
     try {
       const rows = (window.fusedLog && Array.isArray(window.fusedLog.viz_rows))
         ? window.fusedLog.viz_rows : [];
 
       if (!rows.length) {
-        alert("Log je prázdný (nejdřív spusť Offline GNSS).");
+        alert("Log is empty (run Offline GNSS first).");
         return;
       }
 
+      // Format data for export
       const items = rows.map(r => ({
         TIME: r.timestamp,                         // "HH:MM:SS"
         F_GPS: { lat: r.lat, lng: r.lng },
@@ -364,34 +408,35 @@ function footprintForId(mid, footSrc) {
       a.remove();
     } catch (e) {
       console.error("downloadFusedLog error:", e);
-      alert("Chyba při generování logu: " + e.message);
+      alert("Error generating log: " + e.message);
     }
   }
 
-  // ---------- Hlavní výpočet ----------
+  // ---------- Main calculation function ----------
+  // Build fused GPS series by combining mesh data, table data, and path walking
   function buildFusedSeries() {
     const MGPS = getMGpsList();
     const FOOT_SRC = getFootSrc();
       console.log("FOOT_SRC:", Array.isArray(FOOT_SRC) ? `array(${FOOT_SRC.length})` : typeof FOOT_SRC);
 
-
+    // Load table data with anchor readings and timestamps
     const TABLESRC = (typeof BASIC_TABLE_04062025 !== "undefined")
       ? BASIC_TABLE_04062025
       : (window.BASIC_TABLE_04062025 || []);
     const rowsRaw = Array.isArray(TABLESRC) ? TABLESRC : [];
 
     if (!MGPS.length || !rowsRaw.length) {
-      console.warn("FUSED_GPS: chybí FIXED_GPS_MESH (resp. CORR_) nebo BASIC_TABLE_04062025.");
+      console.warn("FUSED_GPS: Missing FIXED_GPS_MESH or BASIC_TABLE_04062025.");
       return [];
     }
 
-    // „koleje“
+    // Initialize path and walker for movement simulation
     const PATH = getPathPoints(MGPS);
     const walker = makePathWalker(PATH, CFG.START.lat, CFG.START.lng);
     const startNode = PATH[0];
     const endNode   = PATH[PATH.length-1];
 
-    // Rolling okno rychlostí
+    // Rolling window for speed averaging (used for turn detection)
     const rollWin = CFG.ROLL_WIN_SEC || 10;
     const q = [];
     let qSum = 0;
@@ -402,22 +447,24 @@ function footprintForId(mid, footSrc) {
     }
     function rollAvg(){ return q.length ? (qSum / q.length) : 0; }
 
-    let turnCooldown = 0; // v sekundách
+    let turnCooldown = 0; // in seconds
 
-    // --- připrav data z tabulky ---
+    // --- Prepare table data ---
+    // Process and normalize table rows with timestamps, speeds, and anchor IDs
   const rows = dedupRows(rowsRaw).map(r => {
-    const ts  = getRowTimestamp(r);    // vždy vrátí HH:MM:SS nebo 00:00:00
+    const ts  = getRowTimestamp(r);    // Always returns HH:MM:SS or 00:00:00
     const sec = parseHmsToSec(ts);
     return { ts, sec, speed: getRowSpeed(r), a_ids: readAnchors(r) };
   }).filter(x => x.sec != null).sort((a,b)=>a.sec-b.sec);
 
-
     if (!rows.length) return [];
 
+    // Create lookup structures for efficient time-based queries
     const tableSecs = new Set(rows.map(r=>r.sec));
     const anchorsBySec = new Map(rows.map(r=>[r.sec, r.a_ids]));
     const tableSecList = [...tableSecs].sort((a,b)=>a - b);
 
+    // Get speed value at specific time (interpolated from table data)
     function speedAtSec(s){
       let v = 0;
       for (let i=rows.length-1;i>=0;i--){
@@ -426,14 +473,15 @@ function footprintForId(mid, footSrc) {
       return Math.max(0, +v || 0);
     }
     
+    // Find anchor IDs around specific time using multiple strategies
     function anchorIdsAroundSec(s) {
-  // 1) přesně s
+  // 1) Exact match at time s
   if (anchorsBySec.has(s)) {
     const a = anchorsBySec.get(s);
     if (Array.isArray(a) && a.length) return a;
   }
 
-  // 2) nejbližší v ±MATCH_TOL_SEC
+  // 2) Nearest within ±MATCH_TOL_SEC tolerance
   const tol = CFG.MATCH_TOL_SEC || 2;
   let bestTs = null, bestDiff = Infinity;
   for (const ts of tableSecList) {
@@ -446,7 +494,7 @@ function footprintForId(mid, footSrc) {
     if (Array.isArray(a) && a.length) return a;
   }
 
-  // 3) dopředné okno do MATCH_LOOKAHEAD_SEC – vezmi první řádek, který má kotvy
+  // 3) Forward-looking window up to MATCH_LOOKAHEAD_SEC - take first row with anchors
   const fwd = CFG.MATCH_LOOKAHEAD_SEC || 0;
   if (fwd > 0) {
     for (const ts of tableSecList) {
@@ -459,14 +507,14 @@ function footprintForId(mid, footSrc) {
   }
   return [];
 }
-    // --- CROSSING rozhodování ---
-// Definované křižovatky
+    // --- CROSSING decision logic ---
+// Predefined intersection points where route decisions are made
 const CROSS_POINTS = [
   { name: "A/B/F", lat: 50.04430181095748, lng: 15.073761428451338, segA: "A", segF: "F" },
   { name: "G/B/B_mezzanin", lat: 50.04444584152843, lng: 15.072987533346705, segG: "G", segB: "B" }
 ];
 
-// Spočítá průměrnou rychlost za posledních N sekund
+// Calculate average speed over last N seconds
 function avgSpeedAround(s, N = 10) {
   let sum = 0, cnt = 0;
   for (let i = Math.max(0, s-N); i <= Math.min(endSec, s+N); i++) {
@@ -476,17 +524,20 @@ function avgSpeedAround(s, N = 10) {
   return cnt > 0 ? sum/cnt : 1.0; // fallback 1 m/s
 }
 
-// --- rozhodnutí v křižovatce ---
+// --- Decision making at intersections ---
+// Determine which route segment to take based on anchor patterns
 function decideAtCrossing(s, pos, baseRow) {
   const nearCross = CROSS_POINTS.find(c => haversine_m(pos.lat, pos.lng, c.lat, c.lng) < 10);
   if (!nearCross) return null;
   if (!nearCross && document.getElementById('crossLogPanel')) {
-  document.getElementById('crossLogPanel').innerHTML = '<b>Cross Debug</b><br>(mimo křižovatku)';
+  document.getElementById('crossLogPanel').innerHTML = '<b>Cross Debug</b><br>(outside intersection)';
   }
 
+  // Look ahead window for anchor pattern analysis
   const lookahead = 35;
   const endS = s + lookahead;
 
+  // Collect usable anchor data within lookahead window
   let usable = [];
   for (const row of rows) {
     if (row.sec >= s && row.sec <= endS) {
@@ -499,6 +550,7 @@ function decideAtCrossing(s, pos, baseRow) {
 
   if (!usable.length) return null;
 
+  // Count frequency of each anchor ID
   const freq = {};
   for (const row of usable) {
     for (const id of row.ids) {
@@ -507,9 +559,11 @@ function decideAtCrossing(s, pos, baseRow) {
     }
   }
 
+  // Define anchor ID sets for different route segments
   const segA_ids = new Set([11,12,13,14,45]);
   const segF_ids = new Set([37,38]);
 
+  // Score each segment based on anchor frequency
   let scoreA = 0, scoreF = 0;
   for (const [id, count] of Object.entries(freq)) {
     if (segA_ids.has(Number(id))) scoreA += count;
@@ -518,7 +572,7 @@ function decideAtCrossing(s, pos, baseRow) {
 
   console.log(`[CROSS-DBG] ${nearCross.name} t=${baseRow?.ts}`, usable, "scoreA=", scoreA, "scoreF=", scoreF);
 
-// --- PANEL UPDATE ---
+// --- Update debug panel ---
 if (document.getElementById('crossLogPanel')) {
   const htmlRows = usable.map(u => {
     const ids = u.ids.filter(x=>x).join(',');
@@ -532,7 +586,7 @@ if (document.getElementById('crossLogPanel')) {
   document.getElementById('crossLogPanel').innerHTML = html;
 }
 
-  // zpřísnění: musí být aspoň 2 různé záznamy po sobě se stejnými segmentovými kotvami
+  // Stricter decision: require at least 2 consecutive records with same segment anchors
   let consecutiveA = 0, consecutiveF = 0;
   for (const row of usable) {
     const ids = new Set(row.ids);
@@ -550,36 +604,38 @@ if (document.getElementById('crossLogPanel')) {
     if (consecutiveF >= 2) return "F";
   }
 
-  // fallback na majoritu
+  // Fallback to majority scoring
   if (scoreA > scoreF) return "A";
   if (scoreF > scoreA) return "F";
   return null;
 }
 
 
+    // Initialize main processing loop variables
     const startSec = rows[0].sec;
     const endSec   = rows[rows.length-1].sec;
-    const out = [];
-    const perSecond = [];
-    let lastHitMeshId = null; // ať nelogujeme stejnou MESH víckrát po sobě
+    const out = [];           // Output for visualization (table timestamps only)
+    const perSecond = [];     // Full 1Hz debug log
+    let lastHitMeshId = null; // Avoid logging same MESH multiple times consecutively
     const CROSS_EPS_M = Math.max(0.1, Number(CFG.SNAP_DISTANCE_M) || 1.0);
 
+// Main processing loop: simulate vehicle movement second by second
 for (let s = startSec, prevS = startSec; s <= endSec; s++) {
   const dt    = (s === startSec) ? 0 : (s - prevS);
   const v     = speedAtSec(s);         // m/s
   const stepM = v * dt;
 
-  // 1) posun po MIDAXIS
+  // 1) Move walker along MIDAXIS path based on speed
   if (stepM > 0) walker.step(stepM);
   const pos = walker.get();
 
-  // 2) NAJDI NEJBLIŽŠÍ MESH — TADY VZNIKÁ `near`
+  // 2) Find nearest MESH point — this creates `near` object
   const near = nearestMGPS(pos.lat, pos.lng, MGPS);
 
-  // 3) detekce „průseku“ (cross)
+  // 3) Detect "crossing" (anchor match) when close to mesh point
   let hit = null;
   if (near && near.m && near.dist <= CROSS_EPS_M) {
-    const a_ids = anchorIdsAroundSec(s);              // kotvy z tabulky kolem času s
+    const a_ids = anchorIdsAroundSec(s);              // anchors from table around time s
     const fp    = footprintForId(near.m.id, FOOT_SRC) || [];
     const setFP = new Set(fp.map(Number).filter(Number.isFinite));
     const matched = (a_ids || []).map(Number).filter(n => setFP.has(n));
@@ -592,27 +648,28 @@ for (let s = startSec, prevS = startSec; s <= endSec; s++) {
     };
     lastHitMeshId = near.m.id;
 
-    // volitelný debug:
+    // Optional debug logging:
     console.log(`CROSS t=${s} mesh=${near.m.id} d=${near.dist.toFixed(2)} a_ids=`, a_ids, 'matched=', matched);
   }
 
-  // 4) rolling průměr + otočka u terminálu
+  // 4) Rolling average + terminal turn detection
   pushSpeed(v);
   const dStart = haversine_m(pos.lat,pos.lng, startNode.lat,startNode.lng);
   const dEnd   = haversine_m(pos.lat,pos.lng, endNode.lat,  endNode.lng);
   const nearTerminal = (dStart <= (CFG.TURN_PROX_M||3)) || (dEnd <= (CFG.TURN_PROX_M||3));
   const avg = rollAvg();
   if (turnCooldown > 0) turnCooldown--;
+  // Reverse direction at terminals when speed drops significantly
   if (nearTerminal && avg > 0 && v <= (CFG.TURN_DROP_RATIO||0.65) * avg && turnCooldown === 0) {
     walker.reverse();
     turnCooldown = CFG.TURN_COOLDOWN_SEC || 20;
   }
 
-  // 5) záznam 1 Hz do ladicího logu - skladani REC¨
+  // 5) Record 1Hz to debug log - building REC object
 let latFinal = pos.lat;
 let lngFinal = pos.lng;
 
-// Snap jen když to má smysl
+// Snap to anchor only when it makes sense (good match, but not too close)
 if (hit && hit.matched_count >= 2 && near && near.dist > CROSS_EPS_M) {
   const fpAnchors = (hit.matched_ids || [])
     .map(id => MGPS.find(m => m.id === id))
@@ -629,7 +686,7 @@ if (hit && hit.matched_count >= 2 && near && near.dist > CROSS_EPS_M) {
       }
     }
 
-    if (best && bestDist > 5) {  // menší tolerance, např. 5 m
+    if (best && bestDist > 5) {  // smaller tolerance, e.g. 5 m
       latFinal = best.lat;
       lngFinal = best.lng;
       console.log("⚠️ Snap to nearest matched anchor:", best.id, "dist", bestDist.toFixed(2));
@@ -637,19 +694,19 @@ if (hit && hit.matched_count >= 2 && near && near.dist > CROSS_EPS_M) {
   }
 } else {
   const baseRow = rows.find(r => r.sec === s);
-  // Pokud jsme blízko crossing point, rozhodni směr
+  // If near crossing point, decide direction
   const decision = decideAtCrossing(s, pos, baseRow);
   if (decision === "F") {
-    // snapni walker na osu segmentu F
+    // snap walker to segment F axis
     latFinal = pos.lat;
     lngFinal = pos.lng;
-    console.log("✅ CROSSING rozhodnutí: segment F");
+    console.log("✅ CROSSING decision: segment F");
   } else if (decision === "A") {
     latFinal = pos.lat;
     lngFinal = pos.lng;
-    console.log("✅ CROSSING rozhodnutí: segment A");
+    console.log("✅ CROSSING decision: segment A");
   } else {
-    // fallback: čistý snap na definovaný střed
+    // fallback: clean snap to defined center
     for (const cross of CROSS_POINTS) {
       const d = haversine_m(pos.lat, pos.lng, cross.lat, cross.lng);
       if (d < 5) {
@@ -662,8 +719,8 @@ if (hit && hit.matched_count >= 2 && near && near.dist > CROSS_EPS_M) {
   }
 }
 
-// najdi baseRow přesně nebo poslední menší
-// --- najdi poslední známý řádek ≤ s
+// Find baseRow exactly or last smaller one
+// --- Find last known row ≤ s
 const baseRow = (() => {
   let found = null;
   for (let i = rows.length - 1; i >= 0; i--) {
@@ -672,12 +729,12 @@ const baseRow = (() => {
   return found;
 })();
 
-// --- CROSS režim ---
-// --- CROSS režim ---
+// --- CROSS mode handling ---
+// --- CROSS mode handling ---
 if (!CROSS_MODE) {
   for (const cross of CROSS_POINTS) {
     const d = haversine_m(pos.lat, pos.lng, cross.lat, cross.lng);
-    const tol = (v < 1.0) ? 10 : 22;   // adaptivní tolerance
+    const tol = (v < 1.0) ? 10 : 22;   // adaptive tolerance
     if (d < tol) {
       CROSS_MODE = { name: cross.name, enteredAtSec: s };
       console.log("🚦 Enter CROSS MODE:", cross.name, "at sec", s, "ts=", baseRow?.ts);
@@ -704,16 +761,17 @@ if (CROSS_MODE) {
   if (decision) {
     console.log("✅ CROSS DECISION:", decision, "at sec", s);
     CROSS_MODE = null;
-    // případně nastav segment = decision
+    // optionally set segment = decision
   }
 }
 
-// --- vypočítej timestamp interpolovaný přímo z čísla s
+// --- Calculate timestamp interpolated directly from number s
 const hh   = String(Math.floor(s / 3600)).padStart(2, "0");
 const mm   = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
 const ss   = String(s % 60).padStart(2, "0");
 const ts   = `${hh}:${mm}:${ss}`;
 
+// Create record object for this second
 const rec = {
   sec: s,
   timeStr: baseRow?.ts || "00:00:00",
@@ -725,7 +783,7 @@ const rec = {
   ...(hit ? hit : {})
 };
 
-// DEBUG pro prvních 10 s
+// DEBUG for first 10 seconds
 if (s - startSec < 10) {
   console.log(
     `[DBG] s=${s}, ts=${ts}, baseRow.ts=${baseRow?.ts}, ` +
@@ -735,23 +793,24 @@ if (s - startSec < 10) {
 
   perSecond.push(rec);
 
-  // 6) vizuální výstup jen v časech z tabulky
+  // 6) Visual output only at table timestamps
   if (tableSecs.has(s)) {
     out.push(rec);
     console.log("ADDING FUSED ROW", s, "timeStr=", rec.timeStr);
   }
   prevS = s;
   }
-    // export do okna pro debug/export
+    // Export to window for debug/export
     window.fusedLog = { per_second: perSecond, viz_rows: out };
     return out;
   }
 
-  // ---------- Uložení datasetu jako .js (s aktuální strukturou) ----------
+  // ---------- Save dataset as .js (with current structure) ----------
+  // Export processed GPS data as JavaScript file for reuse
   function downloadFgpsJs(fused, filename = "F_GPS_DATASET.js") {
     const payload = {
       generated_at: new Date().toISOString(),
-      note: "F_GPS synteticky vypočteno v prohlížeči",
+      note: "F_GPS synthetically calculated in browser",
       items: fused.map(r => ({
         TIMESTAMP: r.timestamp,
         F_GPS: { lat: r.lat, lng: r.lng },
@@ -772,11 +831,12 @@ if (s - startSec < 10) {
     a.remove();
   }
 
-  // ---------- Integrace s rendererem ----------
+  // ---------- Integration with renderer ----------
+  // Main entry point for running the GPS fusion algorithm
   function runOfflineGNSS() {
     const fused = buildFusedSeries();
     if (!Array.isArray(fused) || !fused.length) {
-      alert("FUSED_GPS: Výstup je prázdný (zkontroluj vstupní datasety).");
+      alert("FUSED_GPS: Output is empty (check input datasets).");
       return;
     }
     if (typeof window.applyFusedGpsDataset === "function") {
@@ -787,20 +847,22 @@ if (s - startSec < 10) {
     }
   }
 
-// ---------- Expose API ----------
+// ---------- Expose public API ----------
 window.FUSED_GPS = {
+  // Configure snap distance threshold
   setSnapDistance(m) {
     const v = Number(m);
     if (Number.isFinite(v) && v > 0) {
-      CFG.SNAP_DISTANCE_M = v;   // používáme i jako CROSS_EPS_M
+      CFG.SNAP_DISTANCE_M = v;   // also used as CROSS_EPS_M
     }
   },
 
+  // Core functions
   buildFusedSeries,
   runOfflineGNSS,
   downloadFgpsJs,
 
-  // Uloží log ve formátu JSON (TIME, F_GPS, SPEED_MPS, DIST_TO_M, MATCHED_IDS, MESH_ID)
+  // Save log in JSON format (TIME, F_GPS, SPEED_MPS, DIST_TO_M, MATCHED_IDS, MESH_ID)
   downloadFusedLog(filename) {
     const defName = `F_GPS_LOG_${new Date().toISOString().slice(0,10)}.json`;
     const outName = filename || defName;
@@ -810,7 +872,7 @@ window.FUSED_GPS = {
       : [];
 
     if (!rows.length) {
-      alert("Log je prázdný (nejdřív spusť Offline GNSS).");
+      alert("Log is empty (run Offline GNSS first).");
       return;
     }
 
@@ -833,19 +895,20 @@ window.FUSED_GPS = {
     a.remove();
   },
 
+  // Utility functions for external use
   _util: { haversine_m, bearing_deg, destinationPoint }
 };
 
-// ⬇️⬇️⬇️ PŘIDEJ TADY (tj. těsně nad `})();`) ⬇️⬇️⬇️
+// Configuration access and modification functions
 Object.defineProperty(window.FUSED_GPS, '_CFG', {
-  get: () => CFG,        // jen ke čtení – vrací živou referenci
+  get: () => CFG,        // read-only – returns live reference
   enumerable: false
 });
 
+// Allow runtime configuration updates
 window.FUSED_GPS.setCFG = (patch = {}) => {
   if (patch && typeof patch === 'object') Object.assign(CFG, patch);
 };
-// ⬆️⬆️⬆️ KONEC PŘIDANÉHO KÓDU ⬆️⬆️⬆️
 
 })();
 console.log(FUSED_GPS._CFG.MATCH_LOOKAHEAD_SEC);
