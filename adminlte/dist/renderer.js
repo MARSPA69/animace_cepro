@@ -410,7 +410,7 @@ crossLogPanel.onAdd = function() {
   div.innerHTML = '<b>Cross Debug</b><br>(zatím prázdné)';
   return div;
 };
-crossLogPanel.addTo(window.leafletMap);
+crossLogPanel.addTo(map);
 
 // --- zdroje dat z <script> datasetů ---
 function getMeshSrc() {
