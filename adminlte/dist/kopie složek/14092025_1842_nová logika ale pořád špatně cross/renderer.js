@@ -1,5 +1,4 @@
 console.log('ANCHORS:', ANCHORS);
-console.log('🔍 [RENDERER-START] renderer.js loaded and ready!');
 
 // 1. Inicializace globálních proměnných (přidej na začátek)
 let incidentLog = [];
@@ -1261,19 +1260,6 @@ if (nearCross) {
   // Add cross decision logic here
 }
 
-// --- DEBUG: Track what drives the robot every second from 07:13:00 ---
-console.log(`🔍 [RENDERER-DEBUG] rec.timeStr=${rec.timeStr}, rec.lat=${rec.lat}, rec.lng=${rec.lng}`);
-if (rec.timeStr && rec.timeStr >= "07:13:00" && rec.timeStr <= "07:15:10") {
-  console.log(`🔍 [ROBOT-DRIVER] ${rec.timeStr}: lat=${rec.lat.toFixed(6)}, lng=${rec.lng.toFixed(6)}, speed=${rec.speed_mps?.toFixed(3)}, mesh_id=${rec.mesh_id}, matched_count=${rec.matched_count}, matched_ids=[${rec.matched_ids?.join(',') || ''}]`);
-  
-  // Check CROSS MODE status
-  if (window.FUSED_GPS && window.FUSED_GPS.crossMode) {
-    console.log(`🔍 [CROSS-MODE-STATUS] crossMode.active=${window.FUSED_GPS.crossMode.active}, crossMode.crossing=${window.FUSED_GPS.crossMode.crossing}, crossMode.decision=${window.FUSED_GPS.crossMode.decision}`);
-  } else {
-    console.log(`🔍 [CROSS-MODE-STATUS] window.FUSED_GPS.crossMode not found!`);
-  }
-}
-
 const delay  = Math.max(10, (nextMs - recMs) / (playbackSpeed || 1));
 
 
@@ -1916,11 +1902,9 @@ function applyChannel() {
 
       // b) fallback z FUSED_GPS.js
       if (!fused || !fused.length) {
-        console.log("🔍 [RENDERER] Calling window.FUSED_GPS.buildFusedSeries() WITHOUT PARAMETERS!");
+        console.log("🔍 [RENDERER] Calling window.FUSED_GPS.buildFusedSeries()");
         const raw = window.FUSED_GPS?.buildFusedSeries?.() || [];
         console.log("🔍 [RENDERER] buildFusedSeries returned:", raw.length, "items");
-        console.log("🔍 [RENDERER] raw[0]:", raw[0]);
-        console.log("🔍 [RENDERER] raw[raw.length-1]:", raw[raw.length-1]);
         if (raw.length) {
           fused = raw.map(r => ({
           lat: r.lat, lng: r.lng,

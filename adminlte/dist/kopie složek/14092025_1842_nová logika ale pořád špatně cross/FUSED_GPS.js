@@ -689,28 +689,13 @@ function footprintForId(mid, footSrc) {
           console.log(`✅ [CROSS-DECISION] A at t=${baseRow?.ts} s=${s} (consecutiveA=${consecutiveA})`);
           return "A";
         }
-        // DON'T decide for F immediately - wait for A anchors first!
-        // if (consecutiveF >= 2) {
-        //   console.log(`✅ [CROSS-DECISION] F at t=${baseRow?.ts} s=${s} (consecutiveF=${consecutiveF})`);
-        //   return "F";
-        // }
-      }
-
-      // Timeout fallback: if we've been waiting too long (30s), decide by majority
-      const timeWaiting = s - (crossMode.startTime || s);
-      if (timeWaiting > 30) {
-        console.log(`⏰ [CROSS-DECISION timeout] waited ${timeWaiting}s, deciding by majority`);
-        if (scoreA > scoreF) {
-          console.log(`⚖️ [CROSS-DECISION timeout] A at t=${baseRow?.ts} s=${s}`);
-          return "A";
-        }
-        if (scoreF > scoreA) {
-          console.log(`⚖️ [CROSS-DECISION timeout] F at t=${baseRow?.ts} s=${s}`);
+        if (consecutiveF >= 2) {
+          console.log(`✅ [CROSS-DECISION] F at t=${baseRow?.ts} s=${s} (consecutiveF=${consecutiveF})`);
           return "F";
         }
       }
-      
-      // Fallback to majority scoring (only if no timeout)
+
+      // Fallback to majority scoring
       if (scoreA > scoreF) {
         console.log(`⚖️ [CROSS-DECISION fallback] A at t=${baseRow?.ts} s=${s}`);
         return "A";
@@ -719,7 +704,7 @@ function footprintForId(mid, footSrc) {
         console.log(`⚖️ [CROSS-DECISION fallback] F at t=${baseRow?.ts} s=${s}`);
         return "F";
       }
-      console.log(`❓ [CROSS-DECISION] no clear winner at t=${baseRow?.ts} s=${s}, waiting for A anchors...`);
+      console.log(`❓ [CROSS-DECISION] no clear winner at t=${baseRow?.ts} s=${s}`);
       return null;
     }
 
@@ -837,14 +822,9 @@ function footprintForId(mid, footSrc) {
       })();
 
       // --- CROSS MODE kontrola ---
-      if (baseRow?.ts && baseRow.ts >= "06:54:44" && baseRow.ts <= "07:15:10") {
-        console.log(`[CROSS-STATUS] crossMode.active=${crossMode.active}, time=${baseRow?.ts}, s=${s}, baseRow.sec=${baseRow?.sec}`);
-        console.log(`[LATLNG-DEBUG] latFinal=${latFinal.toFixed(6)}, lngFinal=${lngFinal.toFixed(6)}, pos.lat=${pos.lat.toFixed(6)}, pos.lng=${pos.lng.toFixed(6)}`);
-      }
+      console.log(`[CROSS-STATUS] crossMode.active=${crossMode.active}, time=${baseRow?.ts}, s=${s}, baseRow.sec=${baseRow?.sec}`);
+      console.log(`[LATLNG-DEBUG] latFinal=${latFinal.toFixed(6)}, lngFinal=${lngFinal.toFixed(6)}, pos.lat=${pos.lat.toFixed(6)}, pos.lng=${pos.lng.toFixed(6)}`);
       if (!crossMode.active) {
-        if (baseRow?.ts && baseRow.ts >= "07:13:15" && baseRow.ts <= "07:13:45") {
-          console.log(`[CROSS-MODE-CHECK] crossMode.active=false, checking for crossings...`);
-        }
         for (const cross of CROSS_POINTS) {
           const d = haversine_m(latFinal, lngFinal, cross.lat, cross.lng);
           console.log(`[CROSS-CHECK] ${cross.name}: distance=${d.toFixed(2)}m from latFinal=${latFinal.toFixed(6)}, lngFinal=${lngFinal.toFixed(6)}`);
