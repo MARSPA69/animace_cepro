@@ -1884,7 +1884,9 @@ function applyChannel() {
 
       // b) fallback z FUSED_GPS.js
       if (!fused || !fused.length) {
+        console.log("🔍 [RENDERER] Calling window.FUSED_GPS.buildFusedSeries()");
         const raw = window.FUSED_GPS?.buildFusedSeries?.() || [];
+        console.log("🔍 [RENDERER] buildFusedSeries returned:", raw.length, "items");
         if (raw.length) {
           fused = raw.map(r => ({
           lat: r.lat, lng: r.lng,

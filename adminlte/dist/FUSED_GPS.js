@@ -415,6 +415,7 @@ function footprintForId(mid, footSrc) {
   // ---------- Main calculation function ----------
   // Build fused GPS series by combining mesh data, table data, and path walking
   function buildFusedSeries() {
+    console.log("🚀 [BUILD-START] buildFusedSeries called");
     const MGPS = getMGpsList();
     const FOOT_SRC = getFootSrc();
       console.log("FOOT_SRC:", Array.isArray(FOOT_SRC) ? `array(${FOOT_SRC.length})` : typeof FOOT_SRC);
@@ -425,8 +426,10 @@ function footprintForId(mid, footSrc) {
       : (window.BASIC_TABLE_04062025 || []);
     const rowsRaw = Array.isArray(TABLESRC) ? TABLESRC : [];
 
+    console.log("🔍 [DEBUG] MGPS.length=", MGPS.length, "rowsRaw.length=", rowsRaw.length);
     if (!MGPS.length || !rowsRaw.length) {
       console.warn("FUSED_GPS: Missing FIXED_GPS_MESH or BASIC_TABLE_04062025.");
+      console.warn("🔍 [DEBUG] MGPS:", MGPS, "rowsRaw:", rowsRaw);
       return [];
     }
 
@@ -707,6 +710,7 @@ function footprintForId(mid, footSrc) {
 
     // Main processing loop: simulate vehicle movement second by second
     for (let s = startSec, prevS = startSec; s <= endSec; s++) {
+      if (s % 100 === 0) console.log(`🔄 [LOOP] s=${s}, startSec=${startSec}, endSec=${endSec}`);
       const dt    = (s === startSec) ? 0 : (s - prevS);
       const v     = speedAtSec(s);         // m/s
       const stepM = v * dt;
@@ -818,7 +822,8 @@ function footprintForId(mid, footSrc) {
       })();
 
       // --- CROSS MODE kontrola ---
-      console.log(`[CROSS-STATUS] crossMode.active=${crossMode.active}, time=${baseRow?.ts}`);
+      console.log(`[CROSS-STATUS] crossMode.active=${crossMode.active}, time=${baseRow?.ts}, s=${s}, baseRow.sec=${baseRow?.sec}`);
+      console.log(`[LATLNG-DEBUG] latFinal=${latFinal.toFixed(6)}, lngFinal=${lngFinal.toFixed(6)}, pos.lat=${pos.lat.toFixed(6)}, pos.lng=${pos.lng.toFixed(6)}`);
       if (!crossMode.active) {
         for (const cross of CROSS_POINTS) {
           const d = haversine_m(latFinal, lngFinal, cross.lat, cross.lng);
@@ -963,6 +968,7 @@ function footprintForId(mid, footSrc) {
   // ---------- Integration with renderer ----------
   // Main entry point for running the GPS fusion algorithm
   function runOfflineGNSS() {
+    console.log("🚀 [RUN-OFFLINE] runOfflineGNSS called");
     const fused = buildFusedSeries();
     if (!Array.isArray(fused) || !fused.length) {
       alert("FUSED_GPS: Output is empty (check input datasets).");
