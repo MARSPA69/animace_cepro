@@ -586,7 +586,7 @@ function footprintForId(mid, footSrc) {
     // --- Decision making at intersections ---
     // Determine which route segment to take based on anchor patterns
     function decideAtCrossing(s, pos, baseRow) {
-      let nearCross = CROSS_POINTS.find(c => haversine_m(pos.lat, pos.lng, c.lat, c.lng) < 20);
+      let nearCross = CROSS_POINTS.find(c => haversine_m(pos.lat, pos.lng, c.lat, c.lng) < 10);
       if (!nearCross) {
         // fallback – pokud jsme mimo radius, logni to do panelu
         if (document.getElementById('crossLogPanel')) {
@@ -818,11 +818,12 @@ function footprintForId(mid, footSrc) {
       })();
 
       // --- CROSS MODE kontrola ---
+      console.log(`[CROSS-STATUS] crossMode.active=${crossMode.active}, time=${baseRow?.ts}`);
       if (!crossMode.active) {
         for (const cross of CROSS_POINTS) {
           const d = haversine_m(latFinal, lngFinal, cross.lat, cross.lng);
           console.log(`[CROSS-CHECK] ${cross.name}: distance=${d.toFixed(2)}m from latFinal=${latFinal.toFixed(6)}, lngFinal=${lngFinal.toFixed(6)}`);
-          if (d < 20) {
+          if (d < 10) {
             crossMode.active = true;
             crossMode.crossing = cross;
             crossMode.startTime = s;
