@@ -529,9 +529,7 @@ function footprintForId(mid, footSrc) {
       crossing: null,
       decision: null,
       targetMesh: null,
-      startTime: null,
-      continuation: false,  // pokračování podle MIDAXIS po rozhodnutí
-      midaxisIndex: 0       // index v MIDAXIS pro pokračování
+      startTime: null
     };
 
     // Calculate average speed over last N seconds
@@ -544,26 +542,26 @@ function footprintForId(mid, footSrc) {
       return cnt > 0 ? sum/cnt : 1.0; // fallback 1 m/s
     }
 
-    // Find target MIDAXIS GPS based on crossing decision
-    function findTargetMidaxis(decision, lat, lng) {
-      if (!window.MIDAXIS) return null;
+    // Find target MESH GPS based on crossing decision
+    function findTargetMesh(decision, lat, lng) {
+      if (!window.meshFixedGpsAnchFootprint) return null;
       
-      // Find MIDAXIS GPS in the target segment
-      const targetMidaxis = window.MIDAXIS.filter(point => 
-        point.segment === decision
+      // Find MESH GPS in the target segment
+      const targetMeshes = window.meshFixedGpsAnchFootprint.filter(mesh => 
+        mesh.Segment === decision
       );
       
-      if (targetMidaxis.length === 0) return null;
+      if (targetMeshes.length === 0) return null;
       
-      // Find closest MIDAXIS GPS to current position
+      // Find closest MESH GPS to current position
       let closest = null;
       let minDist = Infinity;
       
-      for (const point of targetMidaxis) {
-        const dist = haversine_m(lat, lng, point.lat, point.lon);
+      for (const mesh of targetMeshes) {
+        const dist = haversine_m(lat, lng, mesh.lat, mesh.lon);
         if (dist < minDist) {
           minDist = dist;
-          closest = point;
+          closest = mesh;
         }
       }
       
@@ -573,7 +571,7 @@ function footprintForId(mid, footSrc) {
     // --- Decision making at intersections ---
     // Determine which route segment to take based on anchor patterns
     function decideAtCrossing(s, pos, baseRow) {
-      let nearCross = CROSS_POINTS.find(c => haversine_m(pos.lat, pos.lng, c.lat, c.lng) < 10);
+      let nearCross = CROSS_POINTS.find(c => haversine_m(pos.lat, pos.lng, c.lat, c.lng) < 20);
       if (!nearCross) {
         // fallback – pokud jsme mimo radius, logni to do panelu
         if (document.getElementById('crossLogPanel')) {
@@ -731,28 +729,6 @@ function footprintForId(mid, footSrc) {
       let latFinal = pos.lat;
       let lngFinal = pos.lng;
 
-      // --- CROSS MODE continuation logic ---
-      if (crossMode.continuation && crossMode.decision) {
-        // Pokračuj podle MIDAXIS místo F_GPS
-        const midaxisPoints = window.MIDAXIS.filter(p => p.segment === crossMode.decision);
-        if (midaxisPoints.length > 0 && crossMode.midaxisIndex < midaxisPoints.length) {
-          const targetPoint = midaxisPoints[crossMode.midaxisIndex];
-          latFinal = targetPoint.lat;
-          lngFinal = targetPoint.lon;
-          
-          // Postupuj v MIDAXIS (každých 5 sekund)
-          if (s % 5 === 0) {
-            crossMode.midaxisIndex++;
-            if (crossMode.midaxisIndex >= midaxisPoints.length) {
-              // Konec segmentu - ukonči CROSS MODE continuation
-              crossMode.continuation = false;
-              crossMode.midaxisIndex = 0;
-              console.log("🏁 End of segment", crossMode.decision, "- returning to F_GPS");
-            }
-          }
-        }
-      }
-
       // Snap to anchor only when it makes sense (good match, but not too close)
       if (hit && hit.matched_count >= 2 && near && near.dist > CROSS_EPS_M) {
         const fpAnchors = (hit.matched_ids || [])
@@ -817,7 +793,7 @@ function footprintForId(mid, footSrc) {
       if (!crossMode.active) {
         for (const cross of CROSS_POINTS) {
           const d = haversine_m(latFinal, lngFinal, cross.lat, cross.lng);
-          if (d < 10) {
+          if (d < 20) {
             crossMode.active = true;
             crossMode.crossing = cross;
             crossMode.startTime = s;
@@ -841,19 +817,16 @@ function footprintForId(mid, footSrc) {
         if (decision) {
           console.log("✅ CROSS DECISION:", decision, "at sec", s);
           
-          // Najdi nejbližší MIDAXIS GPS podle rozhodnutí
-          const targetMidaxis = findTargetMidaxis(decision, latFinal, lngFinal);
-          if (targetMidaxis) {
-            crossMode.targetMesh = targetMidaxis;
+          // Najdi nejbližší MESH GPS podle rozhodnutí
+          const targetMesh = findTargetMesh(decision, latFinal, lngFinal);
+          if (targetMesh) {
+            crossMode.targetMesh = targetMesh;
             crossMode.decision = decision;
-            crossMode.continuation = true;  // aktivuj pokračování podle MIDAXIS
-            crossMode.midaxisIndex = 0;     // začni od začátku segmentu
-            console.log("🎯 Target MIDAXIS:", targetMidaxis.segment, "for decision:", decision);
-            console.log("🔄 Starting CROSS MODE continuation for segment:", decision);
+            console.log("🎯 Target MESH:", targetMesh.id, "for decision:", decision);
             
-            // Přepni na target MIDAXIS GPS místo F_GPS
-            latFinal = targetMidaxis.lat;
-            lngFinal = targetMidaxis.lon;
+            // Přepni na target MESH GPS místo F_GPS
+            latFinal = targetMesh.lat;
+            lngFinal = targetMesh.lon;
           }
           
           crossMode.active = false; // po rozhodnutí reset
