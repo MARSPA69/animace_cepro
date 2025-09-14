@@ -580,7 +580,7 @@ function footprintForId(mid, footSrc) {
       }
 
       // Define anchor ID sets for different route segments
-      const segA_ids = new Set([11,12,13,14,45]);
+      const segA_ids = new Set([10,12,13,14,45]);
       const segF_ids = new Set([37,38]);
 
       // Score each segment based on anchor frequency
@@ -605,6 +605,7 @@ function footprintForId(mid, footSrc) {
       }
 
       console.log(`[CROSS-DBG] ${nearCross.name} usable=`, usable, "scoreA=", scoreA, "scoreF=", scoreF);
+      console.log(`[CROSS-DBG] All anchor IDs found:`, Object.keys(freq));
 
       // Stricter decision: require at least 2 consecutive records with same segment anchors
       let consecutiveA = 0, consecutiveF = 0;
