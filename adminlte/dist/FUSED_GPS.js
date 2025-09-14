@@ -519,7 +519,7 @@ function footprintForId(mid, footSrc) {
     // --- CROSSING decision logic ---
     // Predefined intersection points where route decisions are made
     const CROSS_POINTS = [
-      { name: "A/B/F", lat: 50.04430181095748, lng: 15.073761428451338, segA: "A", segF: "F" },
+      { name: "A/B/F", lat: 50.044294, lng: 15.073727, segA: "A", segF: "F" },
       { name: "G/B/B_mezzanin", lat: 50.04444584152843, lng: 15.072987533346705, segG: "G", segB: "B" }
     ];
 
@@ -536,7 +536,7 @@ function footprintForId(mid, footSrc) {
     // --- Decision making at intersections ---
     // Determine which route segment to take based on anchor patterns
     function decideAtCrossing(s, pos, baseRow) {
-      let nearCross = CROSS_POINTS.find(c => haversine_m(pos.lat, pos.lng, c.lat, c.lng) < 15);
+      let nearCross = CROSS_POINTS.find(c => haversine_m(pos.lat, pos.lng, c.lat, c.lng) < 50);
       if (!nearCross) {
         // fallback – pokud jsme mimo radius, logni to do panelu
         if (document.getElementById('crossLogPanel')) {
@@ -795,7 +795,7 @@ function footprintForId(mid, footSrc) {
 
       // zjisti, zda jsme blízko některého CROSS_POINT
       const nearCross = CROSS_POINTS.find(c =>
-        haversine_m(latFinal, lngFinal, c.lat, c.lng) < 15
+        haversine_m(latFinal, lngFinal, c.lat, c.lng) < 50
       );
 
       if (nearCross) {
