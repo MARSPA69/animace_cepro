@@ -519,8 +519,8 @@ function footprintForId(mid, footSrc) {
     // --- CROSSING decision logic ---
     // Predefined intersection points where route decisions are made
     const CROSS_POINTS = [
-      { name: "A/B/F", lat: 50.044294, lng: 15.073727, segA: "A", segF: "F" },
-      { name: "G/B/B_mezzanin", lat: 50.04444584152843, lng: 15.072987533346705, segG: "G", segB: "B" }
+      { name: "A/B/F", lat: 50.04428936316578, lng: 15.073755198140931, segA: "A", segF: "F" },
+      { name: "G/B/B_mezzanin", lat: 50.04444421683579, lng: 15.072979748050967, segG: "G", segB: "B" }
     ];
 
     // CROSS MODE state tracking
@@ -529,9 +529,7 @@ function footprintForId(mid, footSrc) {
       crossing: null,
       decision: null,
       targetMesh: null,
-      startTime: null,
-      continuation: false,  // pokračování podle MIDAXIS po rozhodnutí
-      midaxisIndex: 0       // index v MIDAXIS pro pokračování
+      startTime: null
     };
 
     // Calculate average speed over last N seconds
@@ -544,36 +542,51 @@ function footprintForId(mid, footSrc) {
       return cnt > 0 ? sum/cnt : 1.0; // fallback 1 m/s
     }
 
-    // Find target MIDAXIS GPS based on crossing decision
-    function findTargetMidaxis(decision, lat, lng) {
-      if (!window.MIDAXIS) return null;
+    // Find target polygon edge center based on crossing decision
+    function findTargetPolygonEdge(decision, lat, lng) {
+      // Get polygon for the target segment
+      let polygon = null;
+      switch(decision) {
+        case 'A': polygon = window.segA_poly; break;
+        case 'B': polygon = window.segB_poly; break;
+        case 'F': polygon = window.segF_poly; break;
+        case 'G': polygon = window.segG_poly; break;
+        default: return null;
+      }
       
-      // Find MIDAXIS GPS in the target segment
-      const targetMidaxis = window.MIDAXIS.filter(point => 
-        point.segment === decision
-      );
+      if (!polygon || !polygon.coordinates || !polygon.coordinates[0]) return null;
       
-      if (targetMidaxis.length === 0) return null;
-      
-      // Find closest MIDAXIS GPS to current position
-      let closest = null;
+      const coords = polygon.coordinates[0]; // First ring of polygon
+      let closestEdge = null;
       let minDist = Infinity;
+      let closestEdgeCenter = null;
       
-      for (const point of targetMidaxis) {
-        const dist = haversine_m(lat, lng, point.lat, point.lon);
+      // Find closest edge of polygon
+      for (let i = 0; i < coords.length - 1; i++) {
+        const p1 = coords[i];
+        const p2 = coords[i + 1];
+        
+        // Calculate edge center
+        const edgeCenterLat = (p1[1] + p2[1]) / 2;
+        const edgeCenterLng = (p1[0] + p2[0]) / 2;
+        
+        // Calculate distance from current position to edge center
+        const dist = haversine_m(lat, lng, edgeCenterLat, edgeCenterLng);
+        
         if (dist < minDist) {
           minDist = dist;
-          closest = point;
+          closestEdge = { p1, p2 };
+          closestEdgeCenter = { lat: edgeCenterLat, lng: edgeCenterLng };
         }
       }
       
-      return closest;
+      return closestEdgeCenter;
     }
 
     // --- Decision making at intersections ---
     // Determine which route segment to take based on anchor patterns
     function decideAtCrossing(s, pos, baseRow) {
-      let nearCross = CROSS_POINTS.find(c => haversine_m(pos.lat, pos.lng, c.lat, c.lng) < 10);
+      let nearCross = CROSS_POINTS.find(c => haversine_m(pos.lat, pos.lng, c.lat, c.lng) < 20);
       if (!nearCross) {
         // fallback – pokud jsme mimo radius, logni to do panelu
         if (document.getElementById('crossLogPanel')) {
@@ -584,7 +597,7 @@ function footprintForId(mid, footSrc) {
       console.log(`🚦 [CROSS-DBG] ENTER crossing ${nearCross.name} at t=${baseRow?.ts || "??"} s=${s}`);
 
       // Look ahead window for anchor pattern analysis
-      const lookahead = 35;
+      const lookahead = 50; // Increased to see 07:13:35 from 07:12:57
       const endS = s + lookahead;
 
       // Collect usable anchor data within lookahead window
@@ -643,27 +656,38 @@ function footprintForId(mid, footSrc) {
 
       console.log(`[CROSS-DBG] ${nearCross.name} usable=`, usable, "scoreA=", scoreA, "scoreF=", scoreF);
       console.log(`[CROSS-DBG] All anchor IDs found:`, Object.keys(freq));
+      console.log(`[CROSS-DBG] Lookahead window: s=${s} to s=${endS} (${lookahead}s ahead)`);
+      console.log(`[CROSS-DBG] Usable rows count:`, usable.length);
 
       // Stricter decision: require at least 2 consecutive records with same segment anchors
       let consecutiveA = 0, consecutiveF = 0;
+      console.log(`[CROSS-DBG] Starting consecutive analysis...`);
       for (const row of usable) {
         const ids = new Set(row.ids);
-        if ([...ids].some(id => segA_ids.has(id))) {
+        const hasA = [...ids].some(id => segA_ids.has(id));
+        const hasF = [...ids].some(id => segF_ids.has(id));
+        
+        console.log(`[CROSS-DBG] Row ${row.ts}: ids=[${[...ids].join(',')}] hasA=${hasA} hasF=${hasF}`);
+        
+        if (hasA) {
           consecutiveA++;
           consecutiveF = 0;
-        } else if ([...ids].some(id => segF_ids.has(id))) {
+          console.log(`[CROSS-DBG] Found A anchor, consecutiveA=${consecutiveA}`);
+        } else if (hasF) {
           consecutiveF++;
           consecutiveA = 0;
+          console.log(`[CROSS-DBG] Found F anchor, consecutiveF=${consecutiveF}`);
         } else {
           consecutiveA = 0;
           consecutiveF = 0;
+          console.log(`[CROSS-DBG] No segment anchors, reset counters`);
         }
         if (consecutiveA >= 2) {
-          console.log(`✅ [CROSS-DECISION] A at t=${baseRow?.ts} s=${s}`);
+          console.log(`✅ [CROSS-DECISION] A at t=${baseRow?.ts} s=${s} (consecutiveA=${consecutiveA})`);
           return "A";
         }
         if (consecutiveF >= 2) {
-          console.log(`✅ [CROSS-DECISION] F at t=${baseRow?.ts} s=${s}`);
+          console.log(`✅ [CROSS-DECISION] F at t=${baseRow?.ts} s=${s} (consecutiveF=${consecutiveF})`);
           return "F";
         }
       }
@@ -731,27 +755,7 @@ function footprintForId(mid, footSrc) {
       let latFinal = pos.lat;
       let lngFinal = pos.lng;
 
-      // --- CROSS MODE continuation logic ---
-      if (crossMode.continuation && crossMode.decision) {
-        // Pokračuj podle MIDAXIS místo F_GPS
-        const midaxisPoints = window.MIDAXIS.filter(p => p.segment === crossMode.decision);
-        if (midaxisPoints.length > 0 && crossMode.midaxisIndex < midaxisPoints.length) {
-          const targetPoint = midaxisPoints[crossMode.midaxisIndex];
-          latFinal = targetPoint.lat;
-          lngFinal = targetPoint.lon;
-          
-          // Postupuj v MIDAXIS (každých 5 sekund)
-          if (s % 5 === 0) {
-            crossMode.midaxisIndex++;
-            if (crossMode.midaxisIndex >= midaxisPoints.length) {
-              // Konec segmentu - ukonči CROSS MODE continuation
-              crossMode.continuation = false;
-              crossMode.midaxisIndex = 0;
-              console.log("🏁 End of segment", crossMode.decision, "- returning to F_GPS");
-            }
-          }
-        }
-      }
+      // --- CROSS MODE continuation logic removed - using original F_GPS ---
 
       // Snap to anchor only when it makes sense (good match, but not too close)
       if (hit && hit.matched_count >= 2 && near && near.dist > CROSS_EPS_M) {
@@ -817,7 +821,8 @@ function footprintForId(mid, footSrc) {
       if (!crossMode.active) {
         for (const cross of CROSS_POINTS) {
           const d = haversine_m(latFinal, lngFinal, cross.lat, cross.lng);
-          if (d < 10) {
+          console.log(`[CROSS-CHECK] ${cross.name}: distance=${d.toFixed(2)}m from latFinal=${latFinal.toFixed(6)}, lngFinal=${lngFinal.toFixed(6)}`);
+          if (d < 20) {
             crossMode.active = true;
             crossMode.crossing = cross;
             crossMode.startTime = s;
@@ -828,6 +833,16 @@ function footprintForId(mid, footSrc) {
             lngFinal = cross.lng;
             break;
           }
+        }
+      } else {
+        // Check if we should exit CROSS MODE (moved away from crossing)
+        const d = haversine_m(latFinal, lngFinal, crossMode.crossing.lat, crossMode.crossing.lng);
+        if (d > 15) { // Exit when 15m away (buffer zone)
+          console.log("🚪 Exit CROSS MODE:", crossMode.crossing.name, "at sec", s, "distance:", d.toFixed(1), "m");
+          crossMode.active = false;
+          crossMode.crossing = null;
+          crossMode.decision = null;
+          crossMode.targetMesh = null;
         }
       }
 
@@ -841,22 +856,25 @@ function footprintForId(mid, footSrc) {
         if (decision) {
           console.log("✅ CROSS DECISION:", decision, "at sec", s);
           
-          // Najdi nejbližší MIDAXIS GPS podle rozhodnutí
-          const targetMidaxis = findTargetMidaxis(decision, latFinal, lngFinal);
-          if (targetMidaxis) {
-            crossMode.targetMesh = targetMidaxis;
+          // Najdi nejbližší hranici polygonu podle rozhodnutí
+          const targetEdge = findTargetPolygonEdge(decision, latFinal, lngFinal);
+          if (targetEdge) {
+            crossMode.targetMesh = targetEdge;
             crossMode.decision = decision;
-            crossMode.continuation = true;  // aktivuj pokračování podle MIDAXIS
-            crossMode.midaxisIndex = 0;     // začni od začátku segmentu
-            console.log("🎯 Target MIDAXIS:", targetMidaxis.segment, "for decision:", decision);
-            console.log("🔄 Starting CROSS MODE continuation for segment:", decision);
+            console.log("🎯 Target polygon edge center for segment:", decision, "lat:", targetEdge.lat.toFixed(6), "lng:", targetEdge.lng.toFixed(6));
             
-            // Přepni na target MIDAXIS GPS místo F_GPS
-            latFinal = targetMidaxis.lat;
-            lngFinal = targetMidaxis.lon;
+            // Přepni na target polygon edge center místo F_GPS
+            latFinal = targetEdge.lat;
+            lngFinal = targetEdge.lng;
           }
           
           crossMode.active = false; // po rozhodnutí reset
+        } else {
+          // V CROSS MODE bez decision - zůstaň na CROSS POINT GPS
+          // NIKDY nezpět - rychlost je stabilní a kladná
+          latFinal = crossMode.crossing.lat;
+          lngFinal = crossMode.crossing.lng;
+          console.log("⏳ CROSS MODE waiting for decision at", crossMode.crossing.name, "sec", s);
         }
       }
 
