@@ -1490,6 +1490,14 @@ ballInfo.innerHTML = `
   console.log("Single HUD rec:", rec, "timeStr:", rec.timeStr, "lastRecStr:", window._lastRecStr);
 }
 
+if (rec.crossDebugHtml && document.getElementById('crossLogPanel')) {
+  let html = rec.crossDebugHtml;
+  if (rec.crossDecision === "A") html += "<br><span style='color:green'>➡ Segment A</span>";
+  if (rec.crossDecision === "F") html += "<br><span style='color:blue'>➡ Segment F</span>";
+  document.getElementById('crossLogPanel').innerHTML = html;
+}
+
+
 // --- POPUP nad kuličkou jen v OFFLINE GNSS
 if (mode === 'offlinegnss') {
   if (!window.fgpsPopup) window.fgpsPopup = L.popup({ offset:[0,-10], closeButton:false });

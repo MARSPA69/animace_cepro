@@ -526,12 +526,17 @@ function avgSpeedAround(s, N = 10) {
 
 // --- Decision making at intersections ---
 // Determine which route segment to take based on anchor patterns
+
 function decideAtCrossing(s, pos, baseRow) {
-  const nearCross = CROSS_POINTS.find(c => haversine_m(pos.lat, pos.lng, c.lat, c.lng) < 10);
-  if (!nearCross) return null;
-  if (!nearCross && document.getElementById('crossLogPanel')) {
-  document.getElementById('crossLogPanel').innerHTML = '<b>Cross Debug</b><br>(outside intersection)';
+let nearCross = CROSS_POINTS.find(c => haversine_m(pos.lat, pos.lng, c.lat, c.lng) < 15);
+if (!nearCross) {
+  // fallback – pokud jsme mimo radius, logni to do panelu
+  if (document.getElementById('crossLogPanel')) {
+    document.getElementById('crossLogPanel').innerHTML = `<b>Cross Debug</b><br>t=${baseRow?.ts}<br>(outside intersection)`;
   }
+  return null;
+}
+  console.log(`🚦 [CROSS-DBG] ENTER crossing ${nearCross.name} at t=${baseRow?.ts || "??"} s=${s}`);
 
   // Look ahead window for anchor pattern analysis
   const lookahead = 35;
@@ -548,7 +553,14 @@ function decideAtCrossing(s, pos, baseRow) {
     }
   }
 
-  if (!usable.length) return null;
+  if (!usable.length) {
+    if (document.getElementById('crossLogPanel')) {
+      document.getElementById('crossLogPanel').innerHTML =
+        `<b>${nearCross.name}</b> @ ${baseRow?.ts}<br>no usable anchors`;
+    }
+    console.warn(`[CROSS-DBG] ${nearCross.name} no usable anchors in lookahead (s=${s})`);
+    return null;
+  }
 
   // Count frequency of each anchor ID
   const freq = {};
@@ -570,21 +582,21 @@ function decideAtCrossing(s, pos, baseRow) {
     if (segF_ids.has(Number(id))) scoreF += count;
   }
 
-  console.log(`[CROSS-DBG] ${nearCross.name} t=${baseRow?.ts}`, usable, "scoreA=", scoreA, "scoreF=", scoreF);
+  // --- Update debug panel ---
+  if (document.getElementById('crossLogPanel')) {
+    const htmlRows = usable.map(u => {
+      const ids = u.ids.filter(x=>x).join(',');
+      return `${u.ts}: [${ids}]`;
+    }).join('<br>');
+    const html = `
+      <b>${nearCross.name}</b> @ ${baseRow?.ts}<br>
+      ScoreA=${scoreA} · ScoreF=${scoreF}<br>
+      ${htmlRows}
+    `;
+    document.getElementById('crossLogPanel').innerHTML = html;
+  }
 
-// --- Update debug panel ---
-if (document.getElementById('crossLogPanel')) {
-  const htmlRows = usable.map(u => {
-    const ids = u.ids.filter(x=>x).join(',');
-    return `${u.ts}: [${ids}]`;
-  }).join('<br>');
-  const html = `
-    <b>${nearCross.name}</b> @ ${baseRow?.ts}<br>
-    ScoreA=${scoreA} · ScoreF=${scoreF}<br>
-    ${htmlRows}
-  `;
-  document.getElementById('crossLogPanel').innerHTML = html;
-}
+  console.log(`[CROSS-DBG] ${nearCross.name} usable=`, usable, "scoreA=", scoreA, "scoreF=", scoreF);
 
   // Stricter decision: require at least 2 consecutive records with same segment anchors
   let consecutiveA = 0, consecutiveF = 0;
@@ -600,16 +612,28 @@ if (document.getElementById('crossLogPanel')) {
       consecutiveA = 0;
       consecutiveF = 0;
     }
-    if (consecutiveA >= 2) return "A";
-    if (consecutiveF >= 2) return "F";
+    if (consecutiveA >= 2) {
+      console.log(`✅ [CROSS-DECISION] A at t=${baseRow?.ts} s=${s}`);
+      return "A";
+    }
+    if (consecutiveF >= 2) {
+      console.log(`✅ [CROSS-DECISION] F at t=${baseRow?.ts} s=${s}`);
+      return "F";
+    }
   }
 
   // Fallback to majority scoring
-  if (scoreA > scoreF) return "A";
-  if (scoreF > scoreA) return "F";
+  if (scoreA > scoreF) {
+    console.log(`⚖️ [CROSS-DECISION fallback] A at t=${baseRow?.ts} s=${s}`);
+    return "A";
+  }
+  if (scoreF > scoreA) {
+    console.log(`⚖️ [CROSS-DECISION fallback] F at t=${baseRow?.ts} s=${s}`);
+    return "F";
+  }
+  console.log(`❓ [CROSS-DECISION] no clear winner at t=${baseRow?.ts} s=${s}`);
   return null;
 }
-
 
     // Initialize main processing loop variables
     const startSec = rows[0].sec;
@@ -730,34 +754,35 @@ const baseRow = (() => {
 })();
 
 
-// --- CROSS mode handling ---
+// --- CROSS MODE kontrola ---
 if (!CROSS_MODE) {
   for (const cross of CROSS_POINTS) {
-    const d = haversine_m(pos.lat, pos.lng, cross.lat, cross.lng);
-    const tol = (v < 1.0) ? 10 : 22;   // adaptive tolerance
-    console.log("🔍 Checking crossing", cross.name, "dist:", d.toFixed(1), "m, tolerance:", tol);
-    if (d < tol) {
+    const d = haversine_m(latFinal, lngFinal, cross.lat, cross.lng);
+    if (d < 10) {
       CROSS_MODE = { name: cross.name, enteredAtSec: s };
-      console.log("🚦 Enter CROSS MODE:", cross.name, "at sec", s, "ts=", baseRow?.ts, "dist:", d.toFixed(1), "m");
+      console.log("🚦 Enter CROSS MODE:", cross.name, "at sec", s, "ts=", baseRow?.ts);
+
+      // Přesně na střed křižovatky
       latFinal = cross.lat;
       lngFinal = cross.lng;
       break;
     }
   }
-} else {
-  // Check if we're still near the crossing
-  const currentCross = CROSS_POINTS.find(c => c.name === CROSS_MODE.name);
-  if (currentCross) {
-    const d = haversine_m(pos.lat, pos.lng, currentCross.lat, currentCross.lng);
-    console.log("📍 In CROSS_MODE:", CROSS_MODE.name, "dist:", d.toFixed(1), "m");
-    
-    // Exit CROSS_MODE if we're too far away
-    if (d > 50) {
-      console.log("🚪 Exit CROSS_MODE - too far away:", d.toFixed(1), "m");
-      CROSS_MODE = null;
-    }
+}
+
+if (CROSS_MODE) {
+  const decision = decideAtCrossing(s, { lat: latFinal, lng: lngFinal }, baseRow);
+
+  if (document.getElementById('crossLogPanel')) {
+    document.getElementById('crossLogPanel').innerHTML += `<br>MODE=${CROSS_MODE.name}, decision=${decision || "?"}`;
+  }
+
+  if (decision) {
+    console.log("✅ CROSS DECISION:", decision, "at sec", s);
+    CROSS_MODE = null; // po rozhodnutí reset
   }
 }
+
 
 // --- ALWAYS UPDATE CROSSING PANEL ---
 console.log("🔍 Starting panel update, pos:", pos.lat, pos.lng, "baseRow:", baseRow?.ts);
@@ -893,18 +918,42 @@ const mm   = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
 const ss   = String(s % 60).padStart(2, "0");
 const ts   = `${hh}:${mm}:${ss}`;
 
-// Create record object for this second
+// --- CROSS režim: rozhodnutí na základě anchor IDs ---
+let crossDecision = null;
+let crossDebugHtml = null;
+
+// zjisti, zda jsme blízko některého CROSS_POINT
+const nearCross = CROSS_POINTS.find(c =>
+  haversine_m(latFinal, lngFinal, c.lat, c.lng) < 15
+);
+
+if (nearCross) {
+  // rozhodnutí pomocí anchorů
+  crossDecision = decideAtCrossing(s, { lat: latFinal, lng: lngFinal }, baseRow);
+
+  // připrav HTML string pro renderer
+  const dbg = [];
+  dbg.push(`<b>${nearCross.name}</b> @ ${baseRow?.ts}`);
+  dbg.push(`Decision=${crossDecision || "?"}`);
+  crossDebugHtml = dbg.join("<br>");
+}
+
+// --- původní rec ---
 const rec = {
   sec: s,
-  timeStr: baseRow?.ts || ts,  // Use calculated timestamp if baseRow is null
-  timestamp: baseRow?.ts || ts, // Add timestamp field for renderer compatibility
-  time: Number.isFinite(s) ? s * 1000 : 0, // Ensure time is a valid number
+  timeStr: baseRow?.ts || "00:00:00",
+  time: s * 1000,
   lat: latFinal,
   lng: lngFinal,
   speed_mps: v,
   dist_to_m: near ? near.dist : null,
-  ...(hit ? hit : {})
+  ...(hit ? hit : {}),
+
+  // přidané
+  crossDecision,
+  crossDebugHtml
 };
+
 
 // DEBUG for first 10 seconds
 if (s - startSec < 10) {
