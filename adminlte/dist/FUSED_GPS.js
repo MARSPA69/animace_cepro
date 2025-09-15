@@ -539,20 +539,7 @@ function footprintForId(mid, footSrc) {
     if (!window.FUSED_GPS) window.FUSED_GPS = {};
     window.FUSED_GPS.crossMode = crossMode;
 
-    // Expose crossMode and distances to renderer
-  
-    window.FUSED_GPS.crossStatus = () => {
-      return {
-        active: crossMode.active,
-        crossing: crossMode.crossing ? crossMode.crossing.name : null,
-        decision: crossMode.decision || null,
-        anchors: baseRow?.a_ids || [],
-        distances: {
-          d1: window.FUSED_GPS._util.haversine_m(latFinal, lngFinal, CROSS_POINTS[0].lat, CROSS_POINTS[0].lng),
-          d2: window.FUSED_GPS._util.haversine_m(latFinal, lngFinal, CROSS_POINTS[1].lat, CROSS_POINTS[1].lng)
-        }
-      };
-    };
+    // Expose crossMode and distances to renderer (moved to end of file)
 
     // Calculate average speed over last N seconds
     function avgSpeedAround(s, N = 10) {
@@ -611,7 +598,7 @@ function footprintForId(mid, footSrc) {
   const nearCross = CROSS_POINTS.find(c => haversine_m(pos.lat, pos.lng, c.lat, c.lng) < 10);
   if (!nearCross) return null;
 
-  const lookahead = 50; // sekundy dopředu
+  const lookahead = 120; // sekundy dopředu - zvýšeno pro lepší detekci na konci kola
   const endS = s + lookahead;
   const usable = [];
   for (const row of rows) {
@@ -624,6 +611,12 @@ function footprintForId(mid, footSrc) {
 
   const segA_ids = new Set([10, 12, 13, 14, ]);
   const segF_ids = new Set([45,37, 38]);
+
+  // Debug pro 07:13:00
+  if (baseRow?.ts && baseRow.ts >= "07:12:00" && baseRow.ts <= "07:15:00") {
+    console.log(`🔍 [CROSS-DEBUG-07:13] t=${baseRow.ts} s=${s}, usable rows:`, usable.length);
+    console.log(`🔍 [CROSS-DEBUG-07:13] usable data:`, usable.map(u => ({ ts: u.ts, ids: u.ids })));
+  }
 
   // 1) preferuj A (čekej na ni)
   const hasA = usable.some(u => u.ids.some(id => segA_ids.has(id)));
@@ -951,4 +944,20 @@ window.FUSED_GPS.setCFG = (patch = {}) => {
   if (patch && typeof patch === 'object') Object.assign(CFG, patch);
 };
 
+  // ---------- Cross status helper ----------
+  // Vrací stav CROSS MODE a vzdálenosti ke křižovatkám pro daný rec
+  window.FUSED_GPS.crossStatus = function(rec) {
+    if (!rec || !rec.lat || !rec.lng) return null;
+    const CROSS_POINTS = CFG.CROSS_POINTS || [];
+    if (CROSS_POINTS.length < 2) return null;
+
+    const d1 = haversine_m(rec.lat, rec.lng, CROSS_POINTS[0].lat, CROSS_POINTS[0].lng);
+    const d2 = haversine_m(rec.lat, rec.lng, CROSS_POINTS[1].lat, CROSS_POINTS[1].lng);
+
+    return {
+      mode: window.FUSED_GPS.crossMode || { active: false },
+      distances: { d1, d2 },
+      anchors: rec.matched_ids || []
+    };
+  };
 })();

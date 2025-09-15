@@ -1216,12 +1216,10 @@ const nextMs = (next && next.time != null)
   ? ((next.time instanceof Date) ? next.time.getTime() : Number(next.time) || (recMs + 1000))
   : (recMs + 1000);
 
-// --- CROSS MODE logic in renderer.js ---
-const CROSS_POINTS = window.FUSED_GPS?._CFG?.CROSS_POINTS || [];
+// --- CROSS MODE logic removed from renderer.js - now handled by FUSED_GPS.js ---
 
-if (nearCross) {
-  console.log(`🚦 [RENDERER] Near crossing: ${nearCross.name} at ${rec.timeStr}`);
-}
+if (window.FUSED_GPS?.crossMode?.active) {
+  console.log(`🚦 [RENDERER] CROSS MODE ACTIVE at ${rec.timeStr}, crossing=${window.FUSED_GPS.crossMode.crossing?.name}`);
 
 // --- DEBUG: Track what drives the robot every second ---
 console.log(`🔍 [RENDERER-DEBUG] rec.timeStr=${rec.timeStr}, rec.lat=${rec.lat}, rec.lng=${rec.lng}`);
@@ -1234,32 +1232,25 @@ if (rec.timeStr && rec.timeStr >= "07:13:00" && rec.timeStr <= "07:15:10") {
     console.log(`🔍 [CROSS-MODE-STATUS] window.FUSED_GPS.crossMode not found!`);
   }
 }
+} // Close the if (window.FUSED_GPS?.crossMode?.active) block
 
 // --- CROSSING DEBUG PANEL UPDATE ---
-if (document.getElementById('crossLogPanel')) {
-  const crossMode = window.FUSED_GPS?.crossMode || {};
-  const d1 = crossMode.crossing?.name === "A/B/F"
-    ? window.FUSED_GPS?._util?.haversine_m?.(
-        crossMode.crossing.lat, crossMode.crossing.lng,
-        rec.lat, rec.lng
-      ) || 999    
-    : window.FUSED_GPS?._util?.haversine_m?.(rec.lat, rec.lng, CROSS_POINTS[0].lat, CROSS_POINTS[0].lng) || 999;
-  const d2 = crossMode.crossing?.name === "G/B/B_mezzanin"
-    ? window.FUSED_GPS?._util?.haversine_m?.(
-        crossMode.crossing.lat, crossMode.crossing.lng,
-        rec.lat, rec.lng
-      ) || 999
-    : window.FUSED_GPS?._util?.haversine_m?.(rec.lat, rec.lng, CROSS_POINTS[1].lat, CROSS_POINTS[1].lng) || 999;
+if (document.getElementById('crossLogPanel') && window.FUSED_GPS?.crossStatus) {
+  const cs = window.FUSED_GPS.crossStatus(rec);
+  if (cs) {
+    const mode = cs.mode || {};
+    const d1 = cs.distances.d1.toFixed(1);
+    const d2 = cs.distances.d2.toFixed(1);
+    const anchors = cs.anchors.length ? cs.anchors.join(", ") : "—";
 
-  const anchorInfo = rec.a_ids?.length ? rec.a_ids.join(",") : "—";
-
-  document.getElementById('crossLogPanel').innerHTML = `
-    <b>CROSS 1 A/B/F</b>: MODE=${crossMode.active && crossMode.crossing?.name==="A/B/F" ? "ANO" : "NE"}<br>
-    <b>CROSS 2 G/B/B_mezzanin</b>: MODE=${crossMode.active && crossMode.crossing?.name==="G/B/B_mezzanin" ? "ANO" : "NE"}<br>
-    DIST TO CROSS 1: ${d1.toFixed(1)} m<br>
-    DIST TO CROSS 2: ${d2.toFixed(1)} m<br>
-    CROSS MODE ANCHORS: [${anchorInfo}]
-  `;
+    document.getElementById('crossLogPanel').innerHTML = `
+      <b>CROSS 1 A/B/F</b>: MODE=${mode.active && mode.crossing?.name==="A/B/F" ? "ANO" : "NE"}<br>
+      <b>CROSS 2 G/B/B_mezzanin</b>: MODE=${mode.active && mode.crossing?.name==="G/B/B_mezzanin" ? "ANO" : "NE"}<br>
+      DIST TO CROSS 1: ${d1} m<br>
+      DIST TO CROSS 2: ${d2} m<br>
+      CROSS MODE ANCHORS: ${anchors}
+    `;
+  }
 }
 
 const delay  = Math.max(10, (nextMs - recMs) / (playbackSpeed || 1));
