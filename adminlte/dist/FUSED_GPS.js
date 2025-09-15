@@ -739,6 +739,9 @@ function footprintForId(mid, footSrc) {
            crossMode.startTime = s;
            console.log("🚦 Enter CROSS MODE:", cross.name, "at sec", s, "ts=", baseRow?.ts);
 
+           // ✅ Aktualizovat window.FUSED_GPS.crossMode
+           window.FUSED_GPS.crossMode = crossMode;
+
     // snap přímo na střed
            latFinal = cross.lat;
            lngFinal = cross.lng;
@@ -756,6 +759,9 @@ function footprintForId(mid, footSrc) {
           crossMode.crossing = null;
           crossMode.decision = null;
           crossMode.targetMesh = null;
+          
+          // ✅ Aktualizovat window.FUSED_GPS.crossMode
+          window.FUSED_GPS.crossMode = crossMode;
         }
       }
 
@@ -775,6 +781,9 @@ function footprintForId(mid, footSrc) {
           
           
           crossMode.active = false; // po rozhodnutí reset
+          
+          // ✅ Aktualizovat window.FUSED_GPS.crossMode
+          window.FUSED_GPS.crossMode = crossMode;
         } else {
           // čekáme na anchor IDs → držíme se středu křižovatky
           latFinal = crossMode.crossing.lat;
