@@ -539,20 +539,20 @@ function footprintForId(mid, footSrc) {
     if (!window.FUSED_GPS) window.FUSED_GPS = {};
     window.FUSED_GPS.crossMode = crossMode;
 
-    // expose crossMode and distances to renderer
-    window.FUSED_GPS.crossStatus = {
-      mode: () => crossMode.active,
-      crossing: () => crossMode.crossing?.name || null,
-      decision: () => crossMode.decision || null,
-      dist: (lat, lng) => {
-        if (!window.FUSED_GPS?._util?.haversine_m) return {};
-        return {
-          d1: window.FUSED_GPS._util.haversine_m(lat, lng, CROSS_POINTS[0].lat, CROSS_POINTS[0].lng),
-          d2: window.FUSED_GPS._util.haversine_m(lat, lng, CROSS_POINTS[1].lat, CROSS_POINTS[1].lng)
-        };
-      }
+    // Expose crossMode and distances to renderer
+  
+    window.FUSED_GPS.crossStatus = () => {
+      return {
+        active: crossMode.active,
+        crossing: crossMode.crossing ? crossMode.crossing.name : null,
+        decision: crossMode.decision || null,
+        anchors: baseRow?.a_ids || [],
+        distances: {
+          d1: window.FUSED_GPS._util.haversine_m(latFinal, lngFinal, CROSS_POINTS[0].lat, CROSS_POINTS[0].lng),
+          d2: window.FUSED_GPS._util.haversine_m(latFinal, lngFinal, CROSS_POINTS[1].lat, CROSS_POINTS[1].lng)
+        }
+      };
     };
-
 
     // Calculate average speed over last N seconds
     function avgSpeedAround(s, N = 10) {

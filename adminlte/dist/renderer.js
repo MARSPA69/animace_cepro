@@ -1249,15 +1249,17 @@ if (rec.timeStr && rec.timeStr >= "07:13:00" && rec.timeStr <= "07:15:10") {
 
 // --- CROSSING DEBUG PANEL UPDATE ---
 if (document.getElementById('crossLogPanel') && window.FUSED_GPS?.crossStatus) {
-  const { d1, d2 } = window.FUSED_GPS.crossStatus.dist(rec.lat, rec.lng);
+  const status = window.FUSED_GPS.crossStatus();
 
   document.getElementById('crossLogPanel').innerHTML = `
-    <b>CROSS 1 A/B/F</b>: MODE=${window.FUSED_GPS.crossStatus.mode() && window.FUSED_GPS.crossStatus.crossing()==="A/B/F" ? "ANO" : "NE"}<br>
-    <b>CROSS 2 G/B/B_mezz</b>: MODE=${window.FUSED_GPS.crossStatus.mode() && window.FUSED_GPS.crossStatus.crossing()==="G/B/B_mezzanin" ? "ANO" : "NE"}<br>
-    DIST TO CROSS 1: ${d1?.toFixed(1) ?? "—"} m<br>
-    DIST TO CROSS 2: ${d2?.toFixed(1) ?? "—"} m
+    <b>CROSS 1 A/B/F</b>: MODE=${status.active && status.crossing==="A/B/F" ? "ANO" : "NE"}<br>
+    <b>CROSS 2 G/B/B_mezz</b>: MODE=${status.active && status.crossing==="G/B/B_mezzanin" ? "ANO" : "NE"}<br>
+    DIST TO CROSS 1: ${status.distances.d1.toFixed(1)} m<br>
+    DIST TO CROSS 2: ${status.distances.d2.toFixed(1)} m<br>
+    CROSS MODE ANCHORS: ${status.anchors.length ? status.anchors.join(", ") : "—"}
   `;
 }
+
 
 const delay  = Math.max(10, (nextMs - recMs) / (playbackSpeed || 1));
 
