@@ -534,6 +534,25 @@ function footprintForId(mid, footSrc) {
       targetMesh: null,
       startTime: null
     };
+    
+    // Expose crossMode to window.FUSED_GPS for debugging
+    if (!window.FUSED_GPS) window.FUSED_GPS = {};
+    window.FUSED_GPS.crossMode = crossMode;
+
+    // expose crossMode and distances to renderer
+    window.FUSED_GPS.crossStatus = {
+      mode: () => crossMode.active,
+      crossing: () => crossMode.crossing?.name || null,
+      decision: () => crossMode.decision || null,
+      dist: (lat, lng) => {
+        if (!window.FUSED_GPS?._util?.haversine_m) return {};
+        return {
+          d1: window.FUSED_GPS._util.haversine_m(lat, lng, CROSS_POINTS[0].lat, CROSS_POINTS[0].lng),
+          d2: window.FUSED_GPS._util.haversine_m(lat, lng, CROSS_POINTS[1].lat, CROSS_POINTS[1].lng)
+        };
+      }
+    };
+
 
     // Calculate average speed over last N seconds
     function avgSpeedAround(s, N = 10) {
@@ -587,141 +606,43 @@ function footprintForId(mid, footSrc) {
     }
 
     // --- Decision making at intersections ---
-    // Determine which route segment to take based on anchor patterns
+    
     function decideAtCrossing(s, pos, baseRow) {
-      let nearCross = CROSS_POINTS.find(c => haversine_m(pos.lat, pos.lng, c.lat, c.lng) < 10);
-      if (!nearCross) {
-        // fallback – pokud jsme mimo radius, logni to do panelu
-        if (document.getElementById('crossLogPanel')) {
-          document.getElementById('crossLogPanel').innerHTML = `<b>Cross Debug</b><br>t=${baseRow?.ts}<br>(outside intersection)`;
-        }
-        return null;
-      }
-      console.log(`🚦 [CROSS-DBG] ENTER crossing ${nearCross.name} at t=${baseRow?.ts || "??"} s=${s}`);
+  const nearCross = CROSS_POINTS.find(c => haversine_m(pos.lat, pos.lng, c.lat, c.lng) < 10);
+  if (!nearCross) return null;
 
-      // Look ahead window for anchor pattern analysis
-      const lookahead = 50; // Increased to see 07:13:35 from 07:12:57
-      const endS = s + lookahead;
-
-      // Collect usable anchor data within lookahead window
-      let usable = [];
-      for (const row of rows) {
-        if (row.sec >= s && row.sec <= endS) {
-          const a_ids = row.a_ids || [];
-          if (a_ids.length && !a_ids.every(v => v === 0)) {
-            usable.push({ ts: row.ts, ids: a_ids });
-          }
-        }
-      }
-
-      if (!usable.length) {
-        if (document.getElementById('crossLogPanel')) {
-          document.getElementById('crossLogPanel').innerHTML =
-            `<b>${nearCross.name}</b> @ ${baseRow?.ts}<br>no usable anchors`;
-        }
-        console.warn(`[CROSS-DBG] ${nearCross.name} no usable anchors in lookahead (s=${s})`);
-        return null;
-      }
-
-      // Count frequency of each anchor ID
-      const freq = {};
-      for (const row of usable) {
-        for (const id of row.ids) {
-          if (!id || id === 0) continue;
-          freq[id] = (freq[id] || 0) + 1;
-        }
-      }
-
-      // Define anchor ID sets for different route segments
-      const segA_ids = new Set([10,12,13,14,45]);
-      const segF_ids = new Set([37,38]);
-
-      // Score each segment based on anchor frequency
-      let scoreA = 0, scoreF = 0;
-      for (const [id, count] of Object.entries(freq)) {
-        if (segA_ids.has(Number(id))) scoreA += count;
-        if (segF_ids.has(Number(id))) scoreF += count;
-      }
-
-      // --- Update debug panel ---
-      if (document.getElementById('crossLogPanel')) {
-        const htmlRows = usable.map(u => {
-          const ids = u.ids.filter(x=>x).join(',');
-          return `${u.ts}: [${ids}]`;
-        }).join('<br>');
-        const html = `
-          <b>${nearCross.name}</b> @ ${baseRow?.ts}<br>
-          ScoreA=${scoreA} · ScoreF=${scoreF}<br>
-          ${htmlRows}
-        `;
-        document.getElementById('crossLogPanel').innerHTML = html;
-      }
-
-      console.log(`[CROSS-DBG] ${nearCross.name} usable=`, usable, "scoreA=", scoreA, "scoreF=", scoreF);
-      console.log(`[CROSS-DBG] All anchor IDs found:`, Object.keys(freq));
-      console.log(`[CROSS-DBG] Lookahead window: s=${s} to s=${endS} (${lookahead}s ahead)`);
-      console.log(`[CROSS-DBG] Usable rows count:`, usable.length);
-
-      // Stricter decision: require at least 2 consecutive records with same segment anchors
-      let consecutiveA = 0, consecutiveF = 0;
-      console.log(`[CROSS-DBG] Starting consecutive analysis...`);
-      for (const row of usable) {
-        const ids = new Set(row.ids);
-        const hasA = [...ids].some(id => segA_ids.has(id));
-        const hasF = [...ids].some(id => segF_ids.has(id));
-        
-        console.log(`[CROSS-DBG] Row ${row.ts}: ids=[${[...ids].join(',')}] hasA=${hasA} hasF=${hasF}`);
-        
-        if (hasA) {
-          consecutiveA++;
-          consecutiveF = 0;
-          console.log(`[CROSS-DBG] Found A anchor, consecutiveA=${consecutiveA}`);
-        } else if (hasF) {
-          consecutiveF++;
-          consecutiveA = 0;
-          console.log(`[CROSS-DBG] Found F anchor, consecutiveF=${consecutiveF}`);
-        } else {
-          consecutiveA = 0;
-          consecutiveF = 0;
-          console.log(`[CROSS-DBG] No segment anchors, reset counters`);
-        }
-        if (consecutiveA >= 2) {
-          console.log(`✅ [CROSS-DECISION] A at t=${baseRow?.ts} s=${s} (consecutiveA=${consecutiveA})`);
-          return "A";
-        }
-        // DON'T decide for F immediately - wait for A anchors first!
-        // if (consecutiveF >= 2) {
-        //   console.log(`✅ [CROSS-DECISION] F at t=${baseRow?.ts} s=${s} (consecutiveF=${consecutiveF})`);
-        //   return "F";
-        // }
-      }
-
-      // Timeout fallback: if we've been waiting too long (30s), decide by majority
-      const timeWaiting = s - (crossMode.startTime || s);
-      if (timeWaiting > 30) {
-        console.log(`⏰ [CROSS-DECISION timeout] waited ${timeWaiting}s, deciding by majority`);
-        if (scoreA > scoreF) {
-          console.log(`⚖️ [CROSS-DECISION timeout] A at t=${baseRow?.ts} s=${s}`);
-          return "A";
-        }
-        if (scoreF > scoreA) {
-          console.log(`⚖️ [CROSS-DECISION timeout] F at t=${baseRow?.ts} s=${s}`);
-          return "F";
-        }
-      }
-      
-      // Fallback to majority scoring (only if no timeout)
-      if (scoreA > scoreF) {
-        console.log(`⚖️ [CROSS-DECISION fallback] A at t=${baseRow?.ts} s=${s}`);
-        return "A";
-      }
-      if (scoreF > scoreA) {
-        console.log(`⚖️ [CROSS-DECISION fallback] F at t=${baseRow?.ts} s=${s}`);
-        return "F";
-      }
-      console.log(`❓ [CROSS-DECISION] no clear winner at t=${baseRow?.ts} s=${s}, waiting for A anchors...`);
-      return null;
+  const lookahead = 50; // sekundy dopředu
+  const endS = s + lookahead;
+  const usable = [];
+  for (const row of rows) {
+    if (row.sec >= s && row.sec <= endS) {
+      const a_ids = row.a_ids || [];
+      if (a_ids.length) usable.push({ ts: row.ts, ids: a_ids });
     }
+  }
+  if (!usable.length) return null;
+
+  const segA_ids = new Set([10, 12, 13, 14, ]);
+  const segF_ids = new Set([45,37, 38]);
+
+  // 1) preferuj A (čekej na ni)
+  const hasA = usable.some(u => u.ids.some(id => segA_ids.has(id)));
+  if (hasA) {
+    console.log(`✅ [CROSS-DECISION] Forcing A at t=${baseRow?.ts} s=${s}`);
+    return "A";
+  }
+
+  // 2) fallback → F
+  const hasF = usable.some(u => u.ids.some(id => segF_ids.has(id)));
+  if (hasF) {
+    console.log(`⚠️ [CROSS-DECISION] fallback F (no A within ${lookahead}s) at t=${baseRow?.ts} s=${s}`);
+    return "F";
+  }
+
+  // 3) čekej dál
+  return null;
+}
+
 
     // Main processing loop: simulate vehicle movement second by second
     for (let s = startSec, prevS = startSec; s <= endSec; s++) {
@@ -799,35 +720,9 @@ function footprintForId(mid, footSrc) {
             console.log("⚠️ Snap to nearest matched anchor:", best.id, "dist", bestDist.toFixed(2));
           }
         }
-      } else {
-        const baseRow = rows.find(r => r.sec === s);
-        // If near crossing point, decide direction
-        const decision = decideAtCrossing(s, pos, baseRow);
-        if (decision === "F") {
-          // snap walker to segment F axis
-          latFinal = pos.lat;
-          lngFinal = pos.lng;
-          console.log("✅ CROSSING decision: segment F");
-        } else if (decision === "A") {
-          latFinal = pos.lat;
-          lngFinal = pos.lng;
-          console.log("✅ CROSSING decision: segment A");
-        } else {
-          // fallback: clean snap to defined center
-          for (const cross of CROSS_POINTS) {
-            const d = haversine_m(pos.lat, pos.lng, cross.lat, cross.lng);
-            if (d < 5) {
-              latFinal = cross.lat;
-              lngFinal = cross.lng;
-              console.log("✅ Snap to CROSSING point:", cross.name);
-              break;
-            }
-          }
-        }
       }
-
       // Find baseRow exactly or last smaller one
-      // --- Find last known row ≤ s
+    
       const baseRow = (() => {
         let found = null;
         for (let i = rows.length - 1; i >= 0; i--) {
@@ -842,25 +737,24 @@ function footprintForId(mid, footSrc) {
         console.log(`[LATLNG-DEBUG] latFinal=${latFinal.toFixed(6)}, lngFinal=${lngFinal.toFixed(6)}, pos.lat=${pos.lat.toFixed(6)}, pos.lng=${pos.lng.toFixed(6)}`);
       }
       if (!crossMode.active) {
-        if (baseRow?.ts && baseRow.ts >= "07:13:15" && baseRow.ts <= "07:13:45") {
-          console.log(`[CROSS-MODE-CHECK] crossMode.active=false, checking for crossings...`);
-        }
         for (const cross of CROSS_POINTS) {
-          const d = haversine_m(latFinal, lngFinal, cross.lat, cross.lng);
-          console.log(`[CROSS-CHECK] ${cross.name}: distance=${d.toFixed(2)}m from latFinal=${latFinal.toFixed(6)}, lngFinal=${lngFinal.toFixed(6)}`);
-          if (d < 10) {
-            crossMode.active = true;
-            crossMode.crossing = cross;
-            crossMode.startTime = s;
-            console.log("🚦 Enter CROSS MODE:", cross.name, "at sec", s, "ts=", baseRow?.ts);
+         const d = haversine_m(latFinal, lngFinal, cross.lat, cross.lng);
+         console.log(`[CROSS-CHECK] ${cross.name}: distance=${d.toFixed(2)}m from latFinal=${latFinal.toFixed(6)}, lngFinal=${lngFinal.toFixed(6)}`);
+         if (d < 10) {
+           crossMode.active = true;
+           crossMode.crossing = cross;
+           crossMode.startTime = s;
+           console.log("🚦 Enter CROSS MODE:", cross.name, "at sec", s, "ts=", baseRow?.ts);
 
-            // Přesně na střed křižovatky
-            latFinal = cross.lat;
-            lngFinal = cross.lng;
-            break;
-          }
+    // snap přímo na střed
+           latFinal = cross.lat;
+           lngFinal = cross.lng;
+           break;
         }
+      }
+
       } else {
+
         // Check if we should exit CROSS MODE (moved away from crossing)
         const d = haversine_m(latFinal, lngFinal, crossMode.crossing.lat, crossMode.crossing.lng);
         if (d > 15) { // Exit when 15m away (buffer zone)
@@ -875,13 +769,6 @@ function footprintForId(mid, footSrc) {
       if (crossMode.active) {
         const decision = decideAtCrossing(s, { lat: latFinal, lng: lngFinal }, baseRow);
 
-        if (document.getElementById('crossLogPanel')) {
-          document.getElementById('crossLogPanel').innerHTML += `<br>MODE=${crossMode.crossing.name}, decision=${decision || "?"}`;
-        }
-
-        if (decision) {
-          console.log("✅ CROSS DECISION:", decision, "at sec", s);
-          
           // Najdi nejbližší hranici polygonu podle rozhodnutí
           const targetEdge = findTargetPolygonEdge(decision, latFinal, lngFinal);
           if (targetEdge) {
@@ -892,15 +779,14 @@ function footprintForId(mid, footSrc) {
             // Přepni na target polygon edge center místo F_GPS
             latFinal = targetEdge.lat;
             lngFinal = targetEdge.lng;
-          }
+          
           
           crossMode.active = false; // po rozhodnutí reset
         } else {
-          // V CROSS MODE bez decision - zůstaň na CROSS POINT GPS
-          // NIKDY nezpět - rychlost je stabilní a kladná
+          // čekáme na anchor IDs → držíme se středu křižovatky
           latFinal = crossMode.crossing.lat;
           lngFinal = crossMode.crossing.lng;
-          console.log("⏳ CROSS MODE waiting for decision at", crossMode.crossing.name, "sec", s);
+          console.log("⏳ Waiting for decision at", crossMode.crossing.name, "sec", s);
         }
       }
 
@@ -960,7 +846,7 @@ function footprintForId(mid, footSrc) {
   }
 
   // ---------- Save dataset as .js (with current structure) ----------
-  // Export processed GPS data as JavaScript file for reuse
+  
   function downloadFgpsJs(fused, filename = "F_GPS_DATASET.js") {
     const payload = {
       generated_at: new Date().toISOString(),

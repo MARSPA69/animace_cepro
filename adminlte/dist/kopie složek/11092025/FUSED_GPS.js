@@ -648,18 +648,7 @@ if (hit && hit.matched_count >= 2 && near && near.dist > CROSS_EPS_M) {
     latFinal = pos.lat;
     lngFinal = pos.lng;
     console.log("✅ CROSSING rozhodnutí: segment A");
-  } else {
-    // fallback: čistý snap na definovaný střed
-    for (const cross of CROSS_POINTS) {
-      const d = haversine_m(pos.lat, pos.lng, cross.lat, cross.lng);
-      if (d < 5) {
-        latFinal = cross.lat;
-        lngFinal = cross.lng;
-        console.log("✅ Snap to CROSSING point:", cross.name);
-        break;
-      }
-    }
-  }
+  } 
 }
 
 // najdi baseRow přesně nebo poslední menší

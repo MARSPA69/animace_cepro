@@ -372,11 +372,17 @@ function getDistToSmallPoly(point) {
 // --- Mapa a marker ---
   map = L.map('leafletMap').setView([greenCenter[1], greenCenter[0]], 17);
   window.leafletMap = map;
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { 
-    maxZoom: 19, 
-    attribution: '&copy; OpenStreetMap contributors',  // ← čárka na konci!
-    noWrap: true                                        // ← správně oddělené čárkou od předchozího
-  }).addTo(map);
+
+// místo původního OSM podkladu
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+  attribution: 'Tiles © Esri',
+  maxZoom: 20,
+  noWrap: true
+}).addTo(window.leafletMap);
+
+
+
+
   if (window.AF && typeof window.AF.init === 'function') {
   window.AF.init(window.leafletMap || map);
   }
@@ -395,64 +401,31 @@ function getDistToSmallPoly(point) {
   L.geoJSON(bigPoly,       { color:'#dc3545', weight:3, dashArray:'5,10', fillOpacity:0 }).bindPopup('Zakázaná zóna').addTo(map);
 
 // --- CROSSING DEBUG PANEL ---
+// Vytvoření a přidání panelu do mapy
 (function initCrossLogPanel() {
   if (!window.leafletMap) {
     console.error("❌ Map object není ještě dostupný – panel nevytvořen");
     return;
   }
-const crossLogPanel = L.control({position:'topright'});
-crossLogPanel.onAdd = function() {
-  console.log("🔧 Creating crossLogPanel element");
-  const div = L.DomUtil.create('div', 'cross-panel');
-  div.id = 'crossLogPanel';
-  div.style.background = 'rgba(255,255,255,0.9)';
-  div.style.padding = '12px';
-  div.style.maxHeight = '150px';
-  div.style.overflowY = 'auto';
-  div.style.fontSize = '13px';
-  div.style.marginTop = '50px';
-  div.style.fontFamily = "'Inter', sans-serif";
-  div.style.borderRadius = '12px';
-  div.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-  div.innerHTML = '<b>Cross Debug</b><br>(zatím prázdné)';
-  console.log("✅ crossLogPanel element created with ID:", div.id);
-  return div;
-};
-crossLogPanel.addTo(window.leafletMap);
-console.log("✅ CrossLogPanel added to map, element ID:", document.getElementById('crossLogPanel') ? 'found' : 'not found');
-
-// Test if panel is accessible after adding to map
-setTimeout(() => {
-  const testElement = document.getElementById('crossLogPanel');
-  if (testElement) {
-    console.log("✅ Panel accessible after timeout, content:", testElement.innerHTML);
-    
-    // Test if we can update the panel content
-    testElement.innerHTML = '<b>TEST UPDATE</b><br>Panel is functional!';
-    console.log("🧪 Test update applied, new content:", testElement.innerHTML);
-    
-    // Restore original content
-    setTimeout(() => {
-      testElement.innerHTML = '<b>Cross Debug</b><br>(zatím prázdné)';
-      console.log("🔄 Original content restored");
-    }, 2000);
-  } else {
-    console.log("❌ Panel not accessible after timeout");
-  }
-}, 1000);
-
-// Add global function to test panel updates
-window.testCrossingPanel = function() {
-  const panel = document.getElementById('crossLogPanel');
-  if (panel) {
-    console.log("🧪 Testing panel update...");
-    panel.innerHTML = '<b>MANUAL TEST</b><br>Panel update works!';
-    console.log("✅ Manual test successful");
-  } else {
-    console.log("❌ Panel not found for manual test");
-  }
+  const crossLogPanel = L.control({position:'topright'});
+  crossLogPanel.onAdd = function() {
+    const div = L.DomUtil.create('div', 'cross-panel');
+    div.id = 'crossLogPanel';
+    div.style.background = 'rgba(255, 255, 255, 0)';
+    div.style.padding = '12px';
+    div.style.maxHeight = '150px';
+    div.style.overflowY = 'auto';
+    div.style.fontSize = '13px';
+    div.style.marginTop = '50px';
+    div.style.fontFamily = "'Inter', sans-serif";
+    div.style.borderRadius = '12px';
+    div.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
+    div.innerHTML = '<b>Cross Debug</b><br>(zatím prázdné)';
+    return div;
   };
+  crossLogPanel.addTo(window.leafletMap);
 })();
+console.log("✅ CrossLogPanel added to map, element ID:", document.getElementById('crossLogPanel') ? 'found' : 'not found');
 
 // --- zdroje dat z <script> datasetů ---
 function getMeshSrc() {
@@ -1272,6 +1245,18 @@ if (rec.timeStr && rec.timeStr >= "07:13:00" && rec.timeStr <= "07:15:10") {
   } else {
     console.log(`🔍 [CROSS-MODE-STATUS] window.FUSED_GPS.crossMode not found!`);
   }
+}
+
+// --- CROSSING DEBUG PANEL UPDATE ---
+if (document.getElementById('crossLogPanel') && window.FUSED_GPS?.crossStatus) {
+  const { d1, d2 } = window.FUSED_GPS.crossStatus.dist(rec.lat, rec.lng);
+
+  document.getElementById('crossLogPanel').innerHTML = `
+    <b>CROSS 1 A/B/F</b>: MODE=${window.FUSED_GPS.crossStatus.mode() && window.FUSED_GPS.crossStatus.crossing()==="A/B/F" ? "ANO" : "NE"}<br>
+    <b>CROSS 2 G/B/B_mezz</b>: MODE=${window.FUSED_GPS.crossStatus.mode() && window.FUSED_GPS.crossStatus.crossing()==="G/B/B_mezzanin" ? "ANO" : "NE"}<br>
+    DIST TO CROSS 1: ${d1?.toFixed(1) ?? "—"} m<br>
+    DIST TO CROSS 2: ${d2?.toFixed(1) ?? "—"} m
+  `;
 }
 
 const delay  = Math.max(10, (nextMs - recMs) / (playbackSpeed || 1));
