@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8" />
+  <title>Pasportizace kotev</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="adminlte.min.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"/>
+  <style>
+    .card { cursor: pointer; transition: transform 0.2s; }
+    .card:hover { transform: scale(1.03); }
+  </style>
+</head>
+<body class="hold-transition sidebar-mini layout-fixed">
+<div class="wrapper">
+
+  <!-- Navbar -->
+  <nav class="main-header navbar navbar-expand navbar-white navbar-light">
+    <ul class="navbar-nav ml-auto">
+      <li class="nav-item"><a class="nav-link" href="index.html">Home</a></li>
+      <li class="nav-item"><a class="nav-link" href="index.html#chat-box">Contact</a></li>
+    </ul>
+  </nav>
+
+  <!-- Sidebar -->
+  <aside class="main-sidebar sidebar-dark-primary elevation-4">
+    <a href="#" class="brand-link">
+      <span class="brand-text font-weight-light">CEPRO</span>
+    </a>
+    <div class="sidebar">
+      <nav class="mt-2">
+        <ul class="nav nav-pills nav-sidebar flex-column">
+          <li class="nav-item">
+            <a href="index.html" class="nav-link"><i class="nav-icon fas fa-map"></i><p>Monitoring LIVE</p></a>
+          </li>
+          <li class="nav-item">
+            <a href="passportizace.html" class="nav-link active"><i class="nav-icon fas fa-anchor"></i><p>Pasportizace kotev</p></a>
+          </li>
+        </ul>
+      </nav>
+    </div>
+  </aside>
+
+  <!-- Content Wrapper -->
+  <div class="content-wrapper">
+    <section class="content pt-3">
+      <div class="container-fluid">
+        <div class="row">
+          <!-- 49 kotev -->
+          <script>
+            for (let i = 9; i <= 49; i++) {
+              document.write(`
+                <div class="col-sm-2 mb-3">
+                  <div class="card text-center" onclick="showAnchor(${i})">
+                    <div class="card-header">Kotva ${i}</div>
+                    <div class="card-body">
+                      <img src="assets/img/Kotva${i}.jpg" class="img-fluid" onerror="this.src='assets/img/kotvy/default.jpg'" />
+                    </div>
+                  </div>
+                </div>
+              `);
+            }
+          </script>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Modal pro detail -->
+  <div class="modal fade" id="anchorModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content text-center">
+        <div class="modal-header">
+          <h5 class="modal-title">Kotva <span id="anchorNum"></span></h5>
+          <button class="close" data-dismiss="modal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <img id="anchorImg" src="" class="img-fluid mb-3"/>
+          <p id="anchorDesc">Instalační údaje...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Skripty -->
+<script>
+  function showAnchor(id) {
+    document.getElementById("anchorNum").textContent = id;
+    document.getElementById("anchorImg").src = `assets/img/Kotva${id}.jpg`;
+    document.getElementById("anchorDesc").textContent = `Ofocené údaje o instalaci kotvy č. ${id}`;
+    $('#anchorModal').modal('show');
+  }
+</script>
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="adminlte.min.js"></script>
+</body>
+</html>
+
