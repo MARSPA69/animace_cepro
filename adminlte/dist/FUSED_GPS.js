@@ -803,17 +803,20 @@ function footprintForId(mid, footSrc) {
       const rec = {
         sec: s,
         timeStr: baseRow?.ts || "00:00:00",
-        time: s * 1000,
         lat: latFinal,
         lng: lngFinal,
         speed_mps: v,
         dist_to_m: near ? near.dist : null,
         ...(hit ? hit : {}),
-
-        // přidané
         crossDecision,
-        crossDebugHtml
+        crossDebugHtml,
+        crossMode: {
+          active: !!crossMode?.active,
+          crossing: crossMode?.crossing || null,
+          decision: crossMode?.decision || null
+        }
       };
+
 
       // DEBUG for first 10 seconds
       if (s - startSec < 10) {
@@ -946,18 +949,18 @@ window.FUSED_GPS.setCFG = (patch = {}) => {
 
   // ---------- Cross status helper ----------
   // Vrací stav CROSS MODE a vzdálenosti ke křižovatkám pro daný rec
-  window.FUSED_GPS.crossStatus = function(rec) {
-    if (!rec || !rec.lat || !rec.lng) return null;
-    const CROSS_POINTS = CFG.CROSS_POINTS || [];
-    if (CROSS_POINTS.length < 2) return null;
+window.FUSED_GPS.crossStatus = function(rec) {
+  if (!rec || !rec.lat || !rec.lng) return null;
+  const CROSS_POINTS = CFG.CROSS_POINTS || [];
+  if (CROSS_POINTS.length < 2) return null;
 
-    const d1 = haversine_m(rec.lat, rec.lng, CROSS_POINTS[0].lat, CROSS_POINTS[0].lng);
-    const d2 = haversine_m(rec.lat, rec.lng, CROSS_POINTS[1].lat, CROSS_POINTS[1].lng);
+  const d1 = haversine_m(rec.lat, rec.lng, CROSS_POINTS[0].lat, CROSS_POINTS[0].lng);
+  const d2 = haversine_m(rec.lat, rec.lng, CROSS_POINTS[1].lat, CROSS_POINTS[1].lng);
 
-    return {
-      mode: window.FUSED_GPS.crossMode || { active: false },
-      distances: { d1, d2 },
-      anchors: rec.matched_ids || []
-    };
+  return {
+    mode: rec.crossMode || { active: false },   // ✅ vezme hodnotu uloženou v rec
+    distances: { d1, d2 },
+    anchors: rec.matched_ids || []
   };
+};
 })();
