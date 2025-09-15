@@ -618,6 +618,10 @@ function footprintForId(mid, footSrc) {
     console.log(`🔍 [CROSS-DEBUG-07:13] usable data:`, usable.map(u => ({ ts: u.ts, ids: u.ids })));
   }
 
+  // Timeout mechanism pro čekání na segment A
+  const WAIT_FOR_A_TIMEOUT = 20; // sekundy čekání na segment A
+  const timeInCrossMode = s - crossMode.startTime;
+
   // 1) preferuj A (čekej na ni)
   const hasA = usable.some(u => u.ids.some(id => segA_ids.has(id)));
   if (hasA) {
@@ -625,10 +629,10 @@ function footprintForId(mid, footSrc) {
     return "A";
   }
 
-  // 2) fallback → F
+  // 2) fallback → F (pouze po timeout)
   const hasF = usable.some(u => u.ids.some(id => segF_ids.has(id)));
-  if (hasF) {
-    console.log(`⚠️ [CROSS-DECISION] fallback F (no A within ${lookahead}s) at t=${baseRow?.ts} s=${s}`);
+  if (hasF && timeInCrossMode > WAIT_FOR_A_TIMEOUT) {
+    console.log(`⚠️ [CROSS-DECISION] fallback F (timeout ${WAIT_FOR_A_TIMEOUT}s, no A) at t=${baseRow?.ts} s=${s}`);
     return "F";
   }
 
