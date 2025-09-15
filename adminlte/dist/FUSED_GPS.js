@@ -525,7 +525,7 @@ function footprintForId(mid, footSrc) {
       { name: "A/B/F", lat: 50.04428936316578, lng: 15.073755198140931, segA: "A", segF: "F" },
       { name: "G/B/B_mezzanin", lat: 50.04444421683579, lng: 15.072979748050967, segG: "G", segB: "B" }
     ];
-
+    CFG.CROSS_POINTS = CROSS_POINTS;
     // CROSS MODE state tracking
     let crossMode = {
       active: false,
