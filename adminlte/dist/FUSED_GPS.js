@@ -634,25 +634,25 @@ function footprintForId(mid, footSrc) {
 
     // --- Decision making at intersections ---
     
-    function decideAtCrossing(s, pos, baseRow) {
+    function decideAtCrossing(s, pos, baseRow, hit) {
   const nearCross = CROSS_POINTS.find(c => haversine_m(pos.lat, pos.lng, c.lat, c.lng) < 10);
   if (!nearCross) return null;
 
-  // ZMENŠENÉ časové okno - pouze 10 sekund místo 120
-  const lookahead = 10; // sekundy dopředu
-  const endS = s + lookahead;
-  const usable = [];
-  for (const row of rows) {
-    if (row.sec >= s && row.sec <= endS) {
-      const a_ids = row.a_ids || [];
-      if (a_ids.length) usable.push({ ts: row.ts, ids: a_ids });
-    }
+  // POUŽÍT HIT OBJEKT MÍSTO ROWS DAT
+  if (!hit || !hit.matched_ids || hit.matched_ids.length === 0) {
+    console.log(`⏳ [CROSS-DECISION] No hit object or matched_ids at t=${baseRow?.ts} s=${s}`);
+    return null;
   }
-  if (!usable.length) return null;
+
+  // Použít matched_ids z hit objektu
+  const usable = [{ ts: baseRow?.ts || "00:00:00", ids: hit.matched_ids }];
 
   // Definice kotev pro segment A (podle vašich požadavků)
   const segA_anchors = new Set([11, 12, 13]);
   const segF_anchors = new Set([37, 38, 45]);
+  
+  // OVERLAP kotvy křižovatky - tyto ignorujeme, protože neříkají o směru pohybu
+  const overlap_anchors = new Set([37, 38, 45]); // Kotvy křižovatky, které se překrývají
 
   // ROZŠÍŘENÉ DEBUG VÝPISY
   if (baseRow?.ts && baseRow.ts >= "07:12:00" && baseRow.ts <= "07:15:00") {
@@ -665,7 +665,7 @@ function footprintForId(mid, footSrc) {
   const currentTime = baseRow?.ts || "00:00:00";
   const isAfterTimeout = currentTime >= "07:13:35";
   
-  // Prioritně hledej kotvy pro segment A
+  // Prioritně hledej kotvy pro segment A (ignoruj OVERLAP kotvy)
   const hasSegmentA = usable.some(u => u.ids.some(id => segA_anchors.has(id)));
   if (hasSegmentA) {
     console.log(`✅ [CROSS-DECISION] Detected segment A anchors at t=${baseRow?.ts} s=${s}`);
@@ -673,12 +673,22 @@ function footprintForId(mid, footSrc) {
   }
 
   // FALLBACK LOGIKA: pokud je po timeout času a nejsou kotvy A, jdi do F
+  // ALE POUZE POKUD NEJSOU POUZE OVERLAP KOTVY
   if (isAfterTimeout) {
     const hasSegmentF = usable.some(u => u.ids.some(id => segF_anchors.has(id)));
-    if (hasSegmentF) {
+    const hasOnlyOverlap = usable.some(u => u.ids.every(id => overlap_anchors.has(id)));
+    
+    if (hasSegmentF && !hasOnlyOverlap) {
       console.log(`⚠️ [CROSS-DECISION] TIMEOUT FALLBACK to segment F at t=${baseRow?.ts} s=${s} (no A anchors after 07:13:35)`);
       return "F";
     }
+  }
+
+  // Pokud jsou pouze OVERLAP kotvy, ignoruj je a čekej dál
+  const hasOnlyOverlap = usable.some(u => u.ids.every(id => overlap_anchors.has(id)));
+  if (hasOnlyOverlap) {
+    console.log(`⏳ [CROSS-DECISION] Only overlap anchors detected at t=${baseRow?.ts} s=${s}, waiting for direction anchors`);
+    return null;
   }
 
   // Pokud nejsou žádné relevantní kotvy, pokračuj v čekání
@@ -817,10 +827,23 @@ function footprintForId(mid, footSrc) {
         if (baseRow?.ts && baseRow.ts >= "07:12:00" && baseRow.ts <= "07:15:00") {
           console.log(`[CROSS-DISTANCE] ${crossMode.crossing.name}: distance=${d.toFixed(2)}m (CROSS MODE stays active)`);
         }
+        
+        // FALLBACK: If CROSS MODE has been active for too long without decision, exit it
+        // This prevents the ball from getting stuck indefinitely
+        if (crossMode.startTime && (s - crossMode.startTime) > 30) { // 30 seconds timeout
+          console.log("🚪 [CROSS-MODE-FALLBACK] Exiting CROSS MODE due to timeout (30s)");
+          crossMode.active = false;
+          crossMode.crossing = null;
+          crossMode.decision = null;
+          crossMode.targetMesh = null;
+          crossMode.waiting = false;
+          window.FUSED_GPS.crossMode = crossMode;
+        }
       }
 
       if (crossMode.active) {
-        const decision = decideAtCrossing(s, { lat: latFinal, lng: lngFinal }, baseRow);
+        // Předat hit objekt do decideAtCrossing místo baseRow
+        const decision = decideAtCrossing(s, { lat: latFinal, lng: lngFinal }, baseRow, hit);
 
         if (decision === "A") {
           // NOVÁ LOGIKA: Přesun na segment A
