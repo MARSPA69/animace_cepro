@@ -419,7 +419,7 @@ function footprintForId(mid, footSrc) {
     
     // 6. Základní Konfigurační Check (CONFIG DEBUG)
     console.log(`⚙️ [CONFIG] SNAP_DIST: ${CFG.SNAP_DISTANCE_M}, LOOKAHEAD: ${CFG.MATCH_LOOKAHEAD_SEC}`);
-    console.log(`⚙️ [CONFIG] CROSS_EPS: ${CFG.SNAP_DISTANCE_M}, MATCH_TOL: ${CFG.MATCH_TOL_SEC}`);
+    console.log(`⚙️ [CONFIG] CROSS_EPS: ${CROSS_EPS_M}, MATCH_TOL: ${CFG.MATCH_TOL_SEC}`);
     const MGPS = getMGpsList();
     const FOOT_SRC = getFootSrc();
       console.log("FOOT_SRC:", Array.isArray(FOOT_SRC) ? `array(${FOOT_SRC.length})` : typeof FOOT_SRC);
@@ -545,18 +545,17 @@ function footprintForId(mid, footSrc) {
     window.FUSED_GPS.crossMode = crossMode;
 
     // 10. Vizuální Status Log (STATUS DEBUG)
-    function logCrossStatus(hit, baseRow, s) {
-      const status = crossMode.active
-        ? `CROSS MODE ACTIVE (${crossMode.crossing?.name || "NONE"}) for ${s - crossMode.startTime}s`
-        : "NORMAL MODE";
-
-      const anchors = hit?.matched_ids?.length
-        ? `Anchors: [${hit.matched_ids.join(',')}]`
-        : "No anchors";
-
+    function logCrossStatus() {
+      const status = crossMode.active ? 
+        `CROSS MODE ACTIVE (${crossMode.crossing?.name}) for ${s - crossMode.startTime}s` : 
+        "NORMAL MODE";
+      
+      const anchors = hit?.matched_ids?.length ? 
+        `Anchors: [${hit.matched_ids.join(',')}]` : 
+        "No anchors";
+      
       console.log(`🟢 [STATUS] ${status} | ${anchors} | Time: ${baseRow?.ts}`);
     }
-
 
     // Expose crossMode and distances to renderer (moved to end of file)
 
@@ -729,7 +728,7 @@ function footprintForId(mid, footSrc) {
     const decision = "A";
     console.log(`🎯 [CROSS-DECISION] Anchor 13 predicted - choosing segment A`);
     console.log(`✅ [DECISION] RETURN: ${decision}, REASON: ${getDecisionReason(decision, usable)}`);
-    return { decision, usable };
+    return decision;
   }
 
   // ZMĚNA: Pokud detekujeme JAKÝKOLIV anchor ze segmentu A, jdeme do A
@@ -737,7 +736,7 @@ function footprintForId(mid, footSrc) {
     const decision = "A";
     console.log(`✅ [CROSS-DECISION] Detected segment A anchors at t=${baseRow?.ts}`);
     console.log(`✅ [DECISION] RETURN: ${decision}, REASON: ${getDecisionReason(decision, usable)}`);
-    return { decision, usable };
+    return decision;
   }
 
   // ZMĚNA: Pokud detekujeme JEN segment F anchor a žádný A, jdeme do F
@@ -745,7 +744,7 @@ function footprintForId(mid, footSrc) {
     const decision = "F";
     console.log(`⚠️ [CROSS-DECISION] Detected only segment F anchors at t=${baseRow?.ts}`);
     console.log(`✅ [DECISION] RETURN: ${decision}, REASON: ${getDecisionReason(decision, usable)}`);
-    return { decision, usable };
+    return decision;
   }
 
   // Pokud nejsou žádné relevantní kotvy, pokračuj v čekání
@@ -758,13 +757,12 @@ function footprintForId(mid, footSrc) {
     ANCHORS: ${usable.flatMap(u => u.ids).join(',')},
     MESH: ${hit?.mesh_id || 'none'}`);
   
-  return { decision, usable };
+  return decision;
 }
 
 
     // Main processing loop: simulate vehicle movement second by second
     for (let s = startSec, prevS = startSec; s <= endSec; s++) {
-      let usable = [];
       if (s % 100 === 0) console.log(`🔄 [LOOP] s=${s}, startSec=${startSec}, endSec=${endSec}`);
       const dt    = (s === startSec) ? 0 : (s - prevS);
       const v     = speedAtSec(s);         // m/s
@@ -809,14 +807,7 @@ function footprintForId(mid, footSrc) {
         walker.reverse();
         turnCooldown = CFG.TURN_COOLDOWN_SEC || 20;
       }
-      
-      const baseRow = (() => {
-        let found = null;
-        for (let i = rows.length - 1; i >= 0; i--) {
-          if (rows[i].sec <= s) { found = rows[i]; break; }
-        }
-        return found;
-      })();
+
       // 7. Path Walker Debug (WALKER DEBUG)
       if (baseRow?.ts && baseRow.ts >= "07:13:00" && baseRow.ts <= "07:14:00") {
         console.log(`🚶 [WALKER] POS: ${pos.lat.toFixed(6)},${pos.lng.toFixed(6)}, SEG: ${pos.seg}, T: ${pos.t}`);
@@ -860,16 +851,21 @@ function footprintForId(mid, footSrc) {
       }
       // Find baseRow exactly or last smaller one
     
-      
+      const baseRow = (() => {
+        let found = null;
+        for (let i = rows.length - 1; i >= 0; i--) {
+          if (rows[i].sec <= s) { found = rows[i]; break; }
+        }
+        return found;
+      })();
 
       // --- CROSS MODE kontrola ---
       if (baseRow?.ts && baseRow.ts >= "06:54:44" && baseRow.ts <= "07:15:10") {
         console.log(`[CROSS-STATUS] crossMode.active=${crossMode.active}, time=${baseRow?.ts}, s=${s}, baseRow.sec=${baseRow?.sec}`);
         console.log(`[LATLNG-DEBUG] latFinal=${latFinal.toFixed(6)}, lngFinal=${lngFinal.toFixed(6)}, pos.lat=${pos.lat.toFixed(6)}, pos.lng=${pos.lng.toFixed(6)}`);
         if (crossMode.active) {
-         console.log(`[CROSS-MODE-DEBUG] crossing=${crossMode.crossing?.name || "NONE"}, decision=${crossMode.decision}, waiting=${crossMode.waiting}`);
+          console.log(`[CROSS-MODE-DEBUG] crossing=${crossMode.crossing?.name}, decision=${crossMode.decision}, waiting=${crossMode.waiting}`);
         }
-
       }
       if (!crossMode.active) {
         for (const cross of CROSS_POINTS) {
@@ -921,27 +917,19 @@ function footprintForId(mid, footSrc) {
       if (crossMode.active) {
         // 8. Error Boundary Logy (ERROR DEBUG)
         let decision = null;
-        let usable   = [];
         try {
-              // decideAtCrossing teď vrací { decision, usable }
-            const decisionObj = decideAtCrossing(
-            s,
-            { lat: latFinal, lng: lngFinal },
-            baseRow,
-            hit
-          ) || {};
-
-          decision = decisionObj.decision;
-          usable   = decisionObj.usable || [];
-
+          // Předat hit objekt do decideAtCrossing místo baseRow
+          decision = decideAtCrossing(s, { lat: latFinal, lng: lngFinal }, baseRow, hit);
         } catch (error) {
           console.error(`💥 [ERROR] In decideAtCrossing at ${baseRow?.ts}: ${error.message}`);
           console.error(`💥 [ERROR] Stack: ${error.stack}`);
+          decision = null; // fallback
         }
 
         if (decision === "A") {
           // NOVÁ LOGIKA: Přesun na segment A
           const entryPoint = findSegmentAEntryPoint(latFinal, lngFinal);
+          
           console.log(`🎯 [SEGMENT-A-TRANSITION] Moving to segment A entry point: lat=${entryPoint.lat.toFixed(6)}, lng=${entryPoint.lng.toFixed(6)}`);
           
           // Nastav novou pozici
@@ -989,12 +977,6 @@ function footprintForId(mid, footSrc) {
         window.FUSED_GPS.crossMode = crossMode;
       }
 
-
-
-
-
-
-
       // --- Calculate timestamp interpolated directly from number s
       const hh   = String(Math.floor(s / 3600)).padStart(2, "0");
       const mm   = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
@@ -1007,10 +989,9 @@ function footprintForId(mid, footSrc) {
 
       // Použij rozhodnutí z CROSS MODE pokud existuje
       if (crossMode.decision) {
-       crossDecision = crossMode.decision;
-       crossDebugHtml = `<b>${crossMode.crossing?.name || "NONE"}</b> @ ${baseRow?.ts}<br>Decision=${crossDecision}`;
+        crossDecision = crossMode.decision;
+        crossDebugHtml = `<b>${crossMode.crossing.name}</b> @ ${baseRow?.ts}<br>Decision=${crossDecision}`;
       }
-
 
       // --- původní rec ---
       const rec = {
@@ -1040,7 +1021,7 @@ function footprintForId(mid, footSrc) {
       }
 
       // Volání status logu každých 5 sekund
-      if (s % 5 === 0) logCrossStatus(hit, baseRow, s);
+      if (s % 5 === 0) logCrossStatus();
 
       // Logujte pouze když je něco špatně
       const shouldLogDebug = 
