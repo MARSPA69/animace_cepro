@@ -526,14 +526,15 @@ function footprintForId(mid, footSrc) {
       { name: "G/B/B_mezzanin", lat: 50.04444421683579, lng: 15.072979748050967, segG: "G", segB: "B" }
     ];
     CFG.CROSS_POINTS = CROSS_POINTS;
-    // CROSS MODE state tracking
-    let crossMode = {
-      active: false,
-      crossing: null,
-      decision: null,
-      targetMesh: null,
-      startTime: null
-    };
+  // CROSS MODE state tracking - ROZŠÍŘENÉ O WAITING FLAG
+  let crossMode = {
+    active: false,
+    crossing: null,
+    decision: null,
+    targetMesh: null,
+    startTime: null,
+    waiting: false  // NOVÝ FLAG pro renderer
+  };
     
     // Expose crossMode to window.FUSED_GPS for debugging
     if (!window.FUSED_GPS) window.FUSED_GPS = {};
@@ -551,46 +552,85 @@ function footprintForId(mid, footSrc) {
       return cnt > 0 ? sum/cnt : 1.0; // fallback 1 m/s
     }
 
-    // Find target polygon edge center based on crossing decision
-    function findTargetPolygonEdge(decision, lat, lng) {
-      // Get polygon for the target segment
-      let polygon = null;
-      switch(decision) {
-        case 'A': polygon = window.segA_poly; break;
-        case 'B': polygon = window.segB_poly; break;
-        case 'F': polygon = window.segF_poly; break;
-        case 'G': polygon = window.segG_poly; break;
-        default: return null;
-      }
-      
-      if (!polygon || !polygon.coordinates || !polygon.coordinates[0]) return null;
-      
-      const coords = polygon.coordinates[0]; // First ring of polygon
-      let closestEdge = null;
-      let minDist = Infinity;
-      let closestEdgeCenter = null;
-      
-      // Find closest edge of polygon
-      for (let i = 0; i < coords.length - 1; i++) {
-        const p1 = coords[i];
-        const p2 = coords[i + 1];
-        
-        // Calculate edge center
-        const edgeCenterLat = (p1[1] + p2[1]) / 2;
-        const edgeCenterLng = (p1[0] + p2[0]) / 2;
-        
-        // Calculate distance from current position to edge center
-        const dist = haversine_m(lat, lng, edgeCenterLat, edgeCenterLng);
-        
-        if (dist < minDist) {
-          minDist = dist;
-          closestEdge = { p1, p2 };
-          closestEdgeCenter = { lat: edgeCenterLat, lng: edgeCenterLng };
-        }
-      }
-      
-      return closestEdgeCenter;
+  // Find target polygon edge center based on crossing decision
+  function findTargetPolygonEdge(decision, lat, lng) {
+    // Get polygon for the target segment
+    let polygon = null;
+    switch(decision) {
+      case 'A': polygon = window.segA_poly; break;
+      case 'B': polygon = window.segB_poly; break;
+      case 'F': polygon = window.segF_poly; break;
+      case 'G': polygon = window.segG_poly; break;
+      default: return null;
     }
+    
+    if (!polygon || !polygon.coordinates || !polygon.coordinates[0]) return null;
+    
+    const coords = polygon.coordinates[0]; // First ring of polygon
+    let closestEdge = null;
+    let minDist = Infinity;
+    let closestEdgeCenter = null;
+    
+    // Find closest edge of polygon
+    for (let i = 0; i < coords.length - 1; i++) {
+      const p1 = coords[i];
+      const p2 = coords[i + 1];
+      
+      // Calculate edge center
+      const edgeCenterLat = (p1[1] + p2[1]) / 2;
+      const edgeCenterLng = (p1[0] + p2[0]) / 2;
+      
+      // Calculate distance from current position to edge center
+      const dist = haversine_m(lat, lng, edgeCenterLat, edgeCenterLng);
+      
+      if (dist < minDist) {
+        minDist = dist;
+        closestEdge = { p1, p2 };
+        closestEdgeCenter = { lat: edgeCenterLat, lng: edgeCenterLng };
+      }
+    }
+    
+    console.log(`🎯 [TARGET-EDGE] Segment ${decision}, closest edge center: lat=${closestEdgeCenter.lat.toFixed(6)}, lng=${closestEdgeCenter.lng.toFixed(6)}`);
+    
+    return closestEdgeCenter;
+  }
+
+  // NOVÁ FUNKCE: Najdi vstupní bod pro segment A
+  function findSegmentAEntryPoint(currentLat, currentLng) {
+    const segA_coords = [
+      [15.0747774879861,50.0439940454987],  // Roh 1
+      [15.073886377953,50.0442231354994],   // Roh 2  
+      [15.073900282052,50.0442579645001],   // Roh 3
+      [15.0747913920189,50.0440288745009]   // Roh 4
+    ];
+    
+    // Najdi dva nejbližší rohy k aktuální pozici
+    let minDist1 = Infinity, minDist2 = Infinity;
+    let closest1 = null, closest2 = null;
+    
+    for (let i = 0; i < segA_coords.length; i++) {
+      const dist = haversine_m(currentLat, currentLng, segA_coords[i][1], segA_coords[i][0]);
+      if (dist < minDist1) {
+        minDist2 = minDist1;
+        closest2 = closest1;
+        minDist1 = dist;
+        closest1 = i;
+      } else if (dist < minDist2) {
+        minDist2 = dist;
+        closest2 = i;
+      }
+    }
+    
+    // Vypočti střed spojnice dvou nejbližších rohů
+    const roh1 = segA_coords[closest1];
+    const roh2 = segA_coords[closest2];
+    const midLat = (roh1[1] + roh2[1]) / 2;
+    const midLng = (roh1[0] + roh2[0]) / 2;
+    
+    console.log(`🎯 [SEGMENT-A-ENTRY] Closest corners: ${closest1+1}, ${closest2+1}, entry point: lat=${midLat.toFixed(6)}, lng=${midLng.toFixed(6)}`);
+    
+    return { lat: midLat, lng: midLng };
+  }
 
     // --- Decision making at intersections ---
     
@@ -598,7 +638,8 @@ function footprintForId(mid, footSrc) {
   const nearCross = CROSS_POINTS.find(c => haversine_m(pos.lat, pos.lng, c.lat, c.lng) < 10);
   if (!nearCross) return null;
 
-  const lookahead = 120; // sekundy dopředu - zvýšeno pro lepší detekci na konci kola
+  // ZMENŠENÉ časové okno - pouze 10 sekund místo 120
+  const lookahead = 10; // sekundy dopředu
   const endS = s + lookahead;
   const usable = [];
   for (const row of rows) {
@@ -609,34 +650,39 @@ function footprintForId(mid, footSrc) {
   }
   if (!usable.length) return null;
 
-  const segA_ids = new Set([10, 12, 13, 14, ]);
-  const segF_ids = new Set([45,37, 38]);
+  // Definice kotev pro segment A (podle vašich požadavků)
+  const segA_anchors = new Set([11, 12, 13]);
+  const segF_anchors = new Set([37, 38, 45]);
 
-  // Debug pro 07:13:00
+  // ROZŠÍŘENÉ DEBUG VÝPISY
   if (baseRow?.ts && baseRow.ts >= "07:12:00" && baseRow.ts <= "07:15:00") {
     console.log(`🔍 [CROSS-DEBUG-07:13] t=${baseRow.ts} s=${s}, usable rows:`, usable.length);
     console.log(`🔍 [CROSS-DEBUG-07:13] usable data:`, usable.map(u => ({ ts: u.ts, ids: u.ids })));
+    console.log(`⏳ [CROSS-WAIT] t=${baseRow.ts}, anchors seen:`, usable.map(u => u.ids));
   }
 
-  // Timeout mechanism pro čekání na segment A
-  const WAIT_FOR_A_TIMEOUT = 20; // sekundy čekání na segment A
-  const timeInCrossMode = s - crossMode.startTime;
-
-  // 1) preferuj A (čekej na ni)
-  const hasA = usable.some(u => u.ids.some(id => segA_ids.has(id)));
-  if (hasA) {
-    console.log(`✅ [CROSS-DECISION] Forcing A at t=${baseRow?.ts} s=${s}`);
+  // FALLBACK TIMEOUT - pokud nepřijdou kotvy do 07:13:35
+  const currentTime = baseRow?.ts || "00:00:00";
+  const isAfterTimeout = currentTime >= "07:13:35";
+  
+  // Prioritně hledej kotvy pro segment A
+  const hasSegmentA = usable.some(u => u.ids.some(id => segA_anchors.has(id)));
+  if (hasSegmentA) {
+    console.log(`✅ [CROSS-DECISION] Detected segment A anchors at t=${baseRow?.ts} s=${s}`);
     return "A";
   }
 
-  // 2) fallback → F (pouze po timeout)
-  const hasF = usable.some(u => u.ids.some(id => segF_ids.has(id)));
-  if (hasF && timeInCrossMode > WAIT_FOR_A_TIMEOUT) {
-    console.log(`⚠️ [CROSS-DECISION] fallback F (timeout ${WAIT_FOR_A_TIMEOUT}s, no A) at t=${baseRow?.ts} s=${s}`);
-    return "F";
+  // FALLBACK LOGIKA: pokud je po timeout času a nejsou kotvy A, jdi do F
+  if (isAfterTimeout) {
+    const hasSegmentF = usable.some(u => u.ids.some(id => segF_anchors.has(id)));
+    if (hasSegmentF) {
+      console.log(`⚠️ [CROSS-DECISION] TIMEOUT FALLBACK to segment F at t=${baseRow?.ts} s=${s} (no A anchors after 07:13:35)`);
+      return "F";
+    }
   }
 
-  // 3) čekej dál
+  // Pokud nejsou žádné relevantní kotvy, pokračuj v čekání
+  console.log(`⏳ [CROSS-DECISION] Waiting for anchors at t=${baseRow?.ts} s=${s}, timeout at 07:13:35`);
   return null;
 }
 
@@ -772,28 +818,55 @@ function footprintForId(mid, footSrc) {
       if (crossMode.active) {
         const decision = decideAtCrossing(s, { lat: latFinal, lng: lngFinal }, baseRow);
 
-          // Najdi nejbližší hranici polygonu podle rozhodnutí
+        if (decision === "A") {
+          // NOVÁ LOGIKA: Přesun na segment A
+          const entryPoint = findSegmentAEntryPoint(latFinal, lngFinal);
+          
+          console.log(`🎯 [SEGMENT-A-TRANSITION] Moving to segment A entry point: lat=${entryPoint.lat.toFixed(6)}, lng=${entryPoint.lng.toFixed(6)}`);
+          
+          // Nastav novou pozici
+          latFinal = entryPoint.lat;
+          lngFinal = entryPoint.lng;
+          
+          // UKONČI CROSS MODE a vrať se k normálnímu F_GPS procesu
+          crossMode.active = false;
+          crossMode.crossing = null;
+          crossMode.decision = "A";
+          crossMode.targetMesh = null;
+          crossMode.waiting = false;  // Ukonči čekání
+          
+          // Aktualizuj window.FUSED_GPS.crossMode
+          window.FUSED_GPS.crossMode = crossMode;
+          
+          console.log(`🚪 [CROSS-MODE-EXIT] Exited CROSS MODE, returning to normal F_GPS process`);
+          
+        } else if (decision === "F") {
+          // Původní logika pro segment F
           const targetEdge = findTargetPolygonEdge(decision, latFinal, lngFinal);
           if (targetEdge) {
             crossMode.targetMesh = targetEdge;
-            crossMode.decision = decision;
+            crossMode.decision = "F";
+            crossMode.waiting = false;  // Ukonči čekání
+            
             console.log("🎯 Target polygon edge center for segment:", decision, "lat:", targetEdge.lat.toFixed(6), "lng:", targetEdge.lng.toFixed(6));
             
-            // Přepni na target polygon edge center místo F_GPS
             latFinal = targetEdge.lat;
             lngFinal = targetEdge.lng;
-          
-          
-          crossMode.active = false; // po rozhodnutí reset
-          
-          // ✅ Aktualizovat window.FUSED_GPS.crossMode
-          window.FUSED_GPS.crossMode = crossMode;
+            
+            crossMode.active = false;
+            window.FUSED_GPS.crossMode = crossMode;
+          }
         } else {
-          // čekáme na anchor IDs → držíme se středu křižovatky
+          // Čekáme na anchor IDs → držíme se středu křižovatky
           latFinal = crossMode.crossing.lat;
           lngFinal = crossMode.crossing.lng;
+          crossMode.waiting = true;  // Nastav čekání
+          
           console.log("⏳ Waiting for decision at", crossMode.crossing.name, "sec", s);
         }
+        
+        // Aktualizuj window.FUSED_GPS.crossMode vždy
+        window.FUSED_GPS.crossMode = crossMode;
       }
 
       // --- Calculate timestamp interpolated directly from number s

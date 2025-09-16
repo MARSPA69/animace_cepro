@@ -126,6 +126,20 @@ infoPanel.innerHTML = `
   <ul id="log-list" style="margin:8px 0; padding-left:16px;"></ul>
 `;
 
+// --- CROSS MODE panel ---
+const crossModePanel = document.createElement('div');
+Object.assign(crossModePanel.style, {
+  position:'absolute', top:'10px', left:'calc(100% - 680px)', width:'320px', maxHeight:'200px',
+  background:'rgba(255,255,255,0.9)', border:'1px solid #007bff',
+  borderRadius:'8px', padding:'12px', fontSize:'12px', zIndex:1000,
+});
+crossModePanel.innerHTML = `
+  <div style="display:flex; justify-content:space-between;"><strong>CROSS MODE Status</strong></div>
+  <div id="cross-mode-status" style="margin:8px 0; padding:8px; background:#f8f9fa; border-radius:4px;">
+    <div>🚪 Normální režim</div>
+  </div>
+`;
+
 // --- Tlačítko pro export incidentů ---
 const exportBtn = document.createElement('button');
 exportBtn.textContent = "Exportovat incidenty";
@@ -143,6 +157,7 @@ exportBtn.onclick = () => {
 infoPanel.appendChild(exportBtn);
 
 document.body.appendChild(infoPanel);
+document.body.appendChild(crossModePanel);
 document.getElementById('clear-logs').onclick = () => { incidents = []; updateLogPanel(); };
 
 function updateLogPanel() {
@@ -165,6 +180,47 @@ function updateLogPanel() {
     `;
     ul.appendChild(div);
   });
+}
+
+function updateCrossModePanel() {
+  const statusDiv = document.getElementById('cross-mode-status');
+  if (!statusDiv) return;
+  
+  if (window.FUSED_GPS?.crossMode) {
+    const crossMode = window.FUSED_GPS.crossMode;
+    let statusHtml = "";
+    
+    if (crossMode.active) {
+      if (crossMode.waiting) {
+        statusHtml = `
+          <div style="color:#ffc107; font-weight:bold">⏳ Čekání na kotvy...</div>
+          <div style="font-size:11px; color:#6c757d">Crossing: ${crossMode.crossing?.name || "null"}</div>
+          <div style="font-size:11px; color:#6c757d">Timeout: 07:13:35</div>
+        `;
+      } else if (crossMode.decision === "A") {
+        statusHtml = `
+          <div style="color:#28a745; font-weight:bold">✅ ANO – Segment A</div>
+          <div style="font-size:11px; color:#6c757d">Přesun na segment A dokončen</div>
+        `;
+      } else if (crossMode.decision === "F") {
+        statusHtml = `
+          <div style="color:#dc3545; font-weight:bold">⚠️ Segment F (fallback)</div>
+          <div style="font-size:11px; color:#6c757d">Fallback po timeout</div>
+        `;
+      } else {
+        statusHtml = `
+          <div style="color:#17a2b8; font-weight:bold">🚦 CROSS MODE aktivní</div>
+          <div style="font-size:11px; color:#6c757d">Crossing: ${crossMode.crossing?.name || "null"}</div>
+        `;
+      }
+    } else {
+      statusHtml = `<div style="color:#6c757d">🚪 Normální režim</div>`;
+    }
+    
+    statusDiv.innerHTML = statusHtml;
+  } else {
+    statusDiv.innerHTML = `<div style="color:#6c757d">🚪 Normální režim</div>`;
+  }
 }
 
 // --- Animace podle RENDERERDATA1.js ---
@@ -250,6 +306,23 @@ if (prev) {
       lastPan = Date.now();
     }
 
+    // CROSS MODE status pro popup
+    let crossModeStatus = "";
+    if (window.FUSED_GPS?.crossMode) {
+      const crossMode = window.FUSED_GPS.crossMode;
+      if (crossMode.active) {
+        if (crossMode.waiting) {
+          crossModeStatus = "<br><b style='color:#ffc107'>⏳ CROSS MODE: Čekání na kotvy...</b>";
+        } else if (crossMode.decision === "A") {
+          crossModeStatus = "<br><b style='color:#28a745'>✅ CROSS MODE: Segment A</b>";
+        } else if (crossMode.decision === "F") {
+          crossModeStatus = "<br><b style='color:#dc3545'>⚠️ CROSS MODE: Segment F (fallback)</b>";
+        } else {
+          crossModeStatus = "<br><b style='color:#17a2b8'>🚦 CROSS MODE: Aktivní</b>";
+        }
+      }
+    }
+
     marker.setPopupContent(`
       <div style="font-size:12px; min-width:220px">
         <b style="color:${inRed ? '#dc3545' : inGreen ? '#28a745' : '#6c757d'}">
@@ -259,9 +332,12 @@ if (prev) {
         <b>Souřadnice:</b> ${rec.lat.toFixed(6)}, ${rec.lng.toFixed(6)}<br>
         <b>ID:</b> ${SUBJECT_ID}<br>
         <b>Typ pohybu:</b> ${motionType}<br>
-<b>Vzdál. k zóně:</b> ${dist} m
+        <b>Vzdál. k zóně:</b> ${dist} m${crossModeStatus}
       </div>
     `).openPopup();
+
+    // Aktualizuj CROSS MODE panel
+    updateCrossModePanel();
 
     if (inRed && !prevInRed) {
       incidents.push({
