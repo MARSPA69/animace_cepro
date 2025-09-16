@@ -1821,6 +1821,11 @@ window.applyFusedGpsDataset = function (fused) {
     startAnimation();
     return; // ← tady funkce korektně končí pro SINGLE
   }
+  
+  // renderer.js (potřebuje opravu)
+  if (!window.Renderer) window.Renderer = {};  // ← velké R
+  window.Renderer.realData = window.realData;
+  window.Renderer.map = window.leafletMap;
 
   // BOTH – jen připrav (bez autostartu)
   console.log(`✅ FUSED_GPS dataset nahrán: ${fusedData.length} záznamů (BOTH)`);

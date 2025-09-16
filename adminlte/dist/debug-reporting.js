@@ -117,21 +117,41 @@
     },
 
     // Zachycení log zprávy
-    captureLog(level, args) {
-      const message = args.join(' ');
-      const timestamp = new Date();
-      
-      const logEntry = {
-        timestamp: timestamp,
-        level: level,
-        category: this.extractCategory(message),
-        message: message,
-        data: this.extractData(message),
-        sessionTime: this.sessionStartTime ? (timestamp - this.sessionStartTime) / 1000 : 0
-      };
+    // Zachycení log zprávy
+  captureLog(level, args) {
+    const message = args.join(' ');
+    const timestamp = new Date();
+  
+    const logEntry = {
+      timestamp: timestamp,
+      level: level,
+      category: this.extractCategory(message),
+      message: message,
+      data: this.extractData(message),
+      sessionTime: this.sessionStartTime ? (timestamp - this.sessionStartTime) / 1000 : 0,
+      state: this.snapshotState()   // <-- snapshot FUSED_GPS a Renderer
+    };
 
-      this.logs.push(logEntry);
-    },
+    this.logs.push(logEntry);
+  },
+
+// Nová metoda: snapshot stavu FUSED_GPS a rendereru
+  snapshotState() {
+    return {
+      fusedGPS: {
+        crossMode: window.FUSED_GPS?.crossMode || null,
+        MGPSlen: window.FUSED_GPS?.MGPS?.length || 0,
+        rowsLen: window.FUSED_GPS?.rows?.length || 0
+      },
+      renderer: {
+        realDataLen: window.Renderer?.realData?.length || 0,
+        mapCenter: (window.Renderer?.map?.getCenter
+                    ? window.Renderer.map.getCenter()
+                    : null)
+      }
+    };
+  },
+
 
     // Extrakce kategorie z log zprávy
     extractCategory(message) {
@@ -218,55 +238,86 @@
 
     // Generování PDF reportu
     async generatePDF() {
-      // jsPDF je dostupný globálně
-      const doc = new window.jspdf.jsPDF();
+  // jsPDF je dostupný globálně
+  const doc = new window.jspdf.jsPDF();
+  
+  // Header
+  doc.setFontSize(20);
+  doc.text('DEBUG LOG REPORT', 20, 20);
+  
+  // Metadata
+  doc.setFontSize(12);
+  doc.text(`Generated: ${new Date().toLocaleString()}`, 20, 35);
+  doc.text(`Session: ${this.sessionStartTime ? this.sessionStartTime.toLocaleString() : 'N/A'} - ${this.sessionEndTime ? this.sessionEndTime.toLocaleString() : 'N/A'}`, 20, 45);
+  doc.text(`Total Logs: ${this.logs.length}`, 20, 55);
+  
+  // Statistiky
+  const stats = this.generateStatistics();
+  doc.text(`Errors: ${stats.errors}`, 20, 65);
+  doc.text(`Warnings: ${stats.warnings}`, 20, 75);
+  doc.text(`Critical: ${stats.critical}`, 20, 85);
+  
+  // Kategorie logů
+  const categories = this.groupLogsByCategory();
+  let yPosition = 100;
+  
+  Object.keys(categories).forEach(category => {
+    if (yPosition > 280) {
+      doc.addPage();
+      yPosition = 20;
+    }
+    
+    doc.setFontSize(14);
+    doc.text(`${category} (${categories[category].length} logs)`, 20, yPosition);
+    yPosition += 10;
+    
+    categories[category].slice(0, 20).forEach(log => { // Limit 20 logů na kategorii
+      if (yPosition > 280) {
+        doc.addPage();
+        yPosition = 20;
+      }
       
-      // Header
-      doc.setFontSize(20);
-      doc.text('DEBUG LOG REPORT', 20, 20);
+      doc.setFontSize(9);
+      const logText = `${log.timestamp.toLocaleTimeString()}: ${log.message.substring(0, 80)}${log.message.length > 80 ? '...' : ''}`;
+      doc.text(logText, 25, yPosition);
+      yPosition += 5;
       
-      // Metadata
-      doc.setFontSize(12);
-      doc.text(`Generated: ${new Date().toLocaleString()}`, 20, 35);
-      doc.text(`Session: ${this.sessionStartTime ? this.sessionStartTime.toLocaleString() : 'N/A'} - ${this.sessionEndTime ? this.sessionEndTime.toLocaleString() : 'N/A'}`, 20, 45);
-      doc.text(`Total Logs: ${this.logs.length}`, 20, 55);
-      
-      // Statistiky
-      const stats = this.generateStatistics();
-      doc.text(`Errors: ${stats.errors}`, 20, 65);
-      doc.text(`Warnings: ${stats.warnings}`, 20, 75);
-      doc.text(`Critical: ${stats.critical}`, 20, 85);
-      
-      // Kategorie logů
-      const categories = this.groupLogsByCategory();
-      let yPosition = 100;
-      
-      Object.keys(categories).forEach(category => {
+      // --- Nový blok: snapshot stavů ---
+      if (log.state) {
+        const { fusedGPS, renderer } = log.state;
+        const cm = fusedGPS.crossMode || {};
+        const snapText = 
+          `crossMode={active:${cm.active}, decision:${cm.decision || "NONE"}, crossing:${cm.crossing?.name || "null"}, waiting:${cm.waiting}} ` +
+          `MGPS=${fusedGPS.MGPSlen}, rows=${fusedGPS.rowsLen}, realData=${renderer.realDataLen}`;
+  
+      if (yPosition > 280) {
+        doc.addPage();
+        yPosition = 20;
+     }
+        doc.setFontSize(8);
+        doc.text(`↳ State: ${snapText}`, 30, yPosition);
+        yPosition += 4;
+  }
+
+      // --- Nový blok: snapshot stavů ---
+      if (log.state) {
+        const { fusedGPS, renderer } = log.state;
+        const snapText = `cross=${fusedGPS.crossMode?.decision || "NONE"}, MGPS=${fusedGPS.MGPSlen}, rows=${fusedGPS.rowsLen}, realData=${renderer.realDataLen}`;
         if (yPosition > 280) {
           doc.addPage();
           yPosition = 20;
         }
-        
-        doc.setFontSize(14);
-        doc.text(`${category} (${categories[category].length} logs)`, 20, yPosition);
-        yPosition += 10;
-        
-        categories[category].slice(0, 20).forEach(log => { // Limit 20 logů na kategorii
-          if (yPosition > 280) {
-            doc.addPage();
-            yPosition = 20;
-          }
-          
-          doc.setFontSize(9);
-          const logText = `${log.timestamp.toLocaleTimeString()}: ${log.message.substring(0, 80)}${log.message.length > 80 ? '...' : ''}`;
-          doc.text(logText, 25, yPosition);
-          yPosition += 5;
-        });
-        yPosition += 10;
-      });
-      
-      return doc.output('blob');
-    },
+        doc.setFontSize(8);
+        doc.text(`↳ State: ${snapText}`, 30, yPosition);
+        yPosition += 4;
+      }
+    });
+    yPosition += 10;
+  });
+  
+  return doc.output('blob');
+},
+
 
     // Seskupení logů podle kategorie
     groupLogsByCategory() {
