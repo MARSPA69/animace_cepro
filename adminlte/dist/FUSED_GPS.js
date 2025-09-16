@@ -740,8 +740,10 @@ function footprintForId(mid, footSrc) {
 
       // --- CROSS MODE continuation logic removed - using original F_GPS ---
 
-      // Snap to anchor only when it makes sense (good match, but not too close)
-      if (hit && hit.matched_count >= 2 && near && near.dist > CROSS_EPS_M) {
+      // DISABLED: Old anchor snapping logic during CROSS MODE
+      // This was interfering with the new CROSS MODE algorithm
+      // Only allow anchor snapping when NOT in CROSS MODE
+      if (!crossMode.active && hit && hit.matched_count >= 2 && near && near.dist > CROSS_EPS_M) {
         const fpAnchors = (hit.matched_ids || [])
           .map(id => MGPS.find(m => m.id === id))
           .filter(Boolean);
@@ -763,6 +765,9 @@ function footprintForId(mid, footSrc) {
             console.log("⚠️ Snap to nearest matched anchor:", best.id, "dist", bestDist.toFixed(2));
           }
         }
+      } else if (crossMode.active && hit && hit.matched_count >= 2) {
+        // Log anchor detection during CROSS MODE for debugging
+        console.log(`🔍 [CROSS-MODE-ANCHORS] Detected anchors: [${hit.matched_ids.join(',')}] at mesh_id=${hit.mesh_id}`);
       }
       // Find baseRow exactly or last smaller one
     
@@ -778,6 +783,9 @@ function footprintForId(mid, footSrc) {
       if (baseRow?.ts && baseRow.ts >= "06:54:44" && baseRow.ts <= "07:15:10") {
         console.log(`[CROSS-STATUS] crossMode.active=${crossMode.active}, time=${baseRow?.ts}, s=${s}, baseRow.sec=${baseRow?.sec}`);
         console.log(`[LATLNG-DEBUG] latFinal=${latFinal.toFixed(6)}, lngFinal=${lngFinal.toFixed(6)}, pos.lat=${pos.lat.toFixed(6)}, pos.lng=${pos.lng.toFixed(6)}`);
+        if (crossMode.active) {
+          console.log(`[CROSS-MODE-DEBUG] crossing=${crossMode.crossing?.name}, decision=${crossMode.decision}, waiting=${crossMode.waiting}`);
+        }
       }
       if (!crossMode.active) {
         for (const cross of CROSS_POINTS) {
@@ -800,18 +808,14 @@ function footprintForId(mid, footSrc) {
       }
 
       } else {
-
-        // Check if we should exit CROSS MODE (moved away from crossing)
+        // DISABLED: Automatic CROSS MODE exit based on distance
+        // Let the new algorithm in decideAtCrossing() handle CROSS MODE exit
+        // when it detects segment A/F anchors or timeout occurs
+        
+        // Optional: Log distance for debugging (but don't exit CROSS MODE)
         const d = haversine_m(latFinal, lngFinal, crossMode.crossing.lat, crossMode.crossing.lng);
-        if (d > 15) { // Exit when 15m away (buffer zone)
-          console.log("🚪 Exit CROSS MODE:", crossMode.crossing.name, "at sec", s, "distance:", d.toFixed(1), "m");
-          crossMode.active = false;
-          crossMode.crossing = null;
-          crossMode.decision = null;
-          crossMode.targetMesh = null;
-          
-          // ✅ Aktualizovat window.FUSED_GPS.crossMode
-          window.FUSED_GPS.crossMode = crossMode;
+        if (baseRow?.ts && baseRow.ts >= "07:12:00" && baseRow.ts <= "07:15:00") {
+          console.log(`[CROSS-DISTANCE] ${crossMode.crossing.name}: distance=${d.toFixed(2)}m (CROSS MODE stays active)`);
         }
       }
 
