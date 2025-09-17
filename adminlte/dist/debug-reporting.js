@@ -46,6 +46,7 @@
     setupEventListeners() {
       const debugReportBtn = document.getElementById('debug-report-btn');
       const chartsTablesBtn = document.getElementById('charts-tables-btn');
+      const exportAiLogsBtn = document.getElementById('export-ai-logs-btn');
 
       if (debugReportBtn) {
         debugReportBtn.addEventListener('click', (e) => {
@@ -58,6 +59,25 @@
         chartsTablesBtn.addEventListener('click', (e) => {
           e.preventDefault();
           this.showChartsAndTables();
+        });
+      }
+
+      if (exportAiLogsBtn) {
+        exportAiLogsBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          this.exportLogsForAI();
+        });
+      }
+
+      // AI Feedback button - handled by ai-feedback.js
+      const aiFeedbackBtn = document.getElementById('ai-feedback-btn');
+      if (aiFeedbackBtn) {
+        aiFeedbackBtn.addEventListener('click', (e) => {
+          e.preventDefault();
+          // Let ai-feedback.js handle this
+          if (window.aiFeedbackManager) {
+            window.aiFeedbackManager.togglePanel();
+          }
         });
       }
     },
@@ -116,12 +136,17 @@
       console.log('📊 [DEBUG-REPORTING] Total logs captured:', this.logs.length);
     },
 
-    // Zachycení log zprávy
+    
     // Zachycení log zprávy
   captureLog(level, args) {
     const message = args.join(' ');
     const timestamp = new Date();
-  
+    
+    if (window.aiFeedbackManager && typeof window.aiFeedbackManager.onLog === "function") {
+    window.aiFeedbackManager.onLog(logEntry);
+}
+
+
     const logEntry = {
       timestamp: timestamp,
       level: level,
@@ -239,17 +264,24 @@
     // Generování PDF reportu
     async generatePDF() {
   // jsPDF je dostupný globálně
-  const doc = new window.jspdf.jsPDF();
+  const doc = new window.jspdf.jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4'
+  });
+  
+  // Nastavit font
+  doc.setFont('helvetica');
   
   // Header
-  doc.setFontSize(20);
+  doc.setFontSize(16);
   doc.text('DEBUG LOG REPORT', 20, 20);
   
   // Metadata
-  doc.setFontSize(12);
-  doc.text(`Generated: ${new Date().toLocaleString()}`, 20, 35);
-  doc.text(`Session: ${this.sessionStartTime ? this.sessionStartTime.toLocaleString() : 'N/A'} - ${this.sessionEndTime ? this.sessionEndTime.toLocaleString() : 'N/A'}`, 20, 45);
-  doc.text(`Total Logs: ${this.logs.length}`, 20, 55);
+  doc.setFontSize(10);
+  doc.text(`Generated: ${new Date().toLocaleString()}`, 20, 30);
+  doc.text(`Session: ${this.sessionStartTime ? this.sessionStartTime.toLocaleString() : 'N/A'} - ${this.sessionEndTime ? this.sessionEndTime.toLocaleString() : 'N/A'}`, 20, 37);
+  doc.text(`Total Logs: ${this.logs.length}`, 20, 44);
   
   // Statistiky
   const stats = this.generateStatistics();
@@ -406,6 +438,62 @@
       } else {
         alert(`Failed to generate report: ${error.message}`);
       }
+    },
+
+    // Export logů pro AI agenta
+    exportLogsForAI() {
+      console.log('🤖 [DEBUG-REPORTING] Exporting logs for AI agent...');
+      
+      try {
+        const today = moment().format('YYYY-MM-DD');
+        const exportData = this.logs.map(log => ({
+          timestamp: log.timestamp ? moment(log.timestamp).format('HH:mm:ss') : 'N/A',
+          message: log.message,
+          category: log.category,
+          certainty: this.calculateCertainty(log),
+          context: log.state || {}
+        }));
+        
+        // Vytvoř JSON pro AI agenta
+        const aiLogs = {
+          export_date: today,
+          total_logs: exportData.length,
+          session_start: this.sessionStartTime,
+          session_end: this.sessionEndTime,
+          logs: exportData
+        };
+        
+        // Stáhnout jako soubor
+        const blob = new Blob([JSON.stringify(aiLogs, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `logs_feed_${today}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        this.showSuccessMessage(`Logs exported for AI agent: logs_feed_${today}.json`);
+        console.log('✅ [DEBUG-REPORTING] Logs exported for AI agent successfully');
+        
+      } catch (error) {
+        console.error('❌ [DEBUG-REPORTING] Error exporting logs for AI:', error);
+        this.showErrorMessage('Failed to export logs for AI agent');
+      }
+    },
+    
+    // Výpočet certainty pro AI agenta
+    calculateCertainty(log) {
+      // Logika pro určení certainty na základě kategorie a obsahu
+      if (log.category === 'CRITICAL' || log.category === 'ERROR_DEBUG') {
+        return 0.1; // Nízká certainty - potřebuje feedback
+      } else if (log.category === 'DECISION_DEBUG' || log.category === 'ANCHOR_DEBUG') {
+        return 0.3; // Střední certainty - může potřebovat feedback
+      } else if (log.category === 'STATUS_DEBUG' || log.category === 'CONFIG_DEBUG') {
+        return 0.8; // Vysoká certainty - pravděpodobně OK
+      }
+      return 0.5; // Výchozí certainty
     },
 
     // Zobrazení Charts & Tables (placeholder)

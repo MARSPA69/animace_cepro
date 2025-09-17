@@ -1412,6 +1412,18 @@
                       <p>Charts & Tables</p>
                     </a>
                   </li>
+                  <li class="nav-item">
+                    <a href="#" class="nav-link" id="export-ai-logs-btn">
+                      <i class="nav-icon bi bi-robot"></i>
+                      <p>Export AI Logs</p>
+                    </a>
+                  </li>
+                  <li class="nav-item">
+                    <a href="#" class="nav-link" id="ai-feedback-btn">
+                      <i class="nav-icon bi bi-chat-dots"></i>
+                      <p>AI Feedback</p>
+                    </a>
+                  </li>
                 </ul>
               </li>
               <li class="nav-header">EXAMPLES</li>
@@ -2028,6 +2040,7 @@
     <script src="./FUSED_GPS.js"></script>
     <script src="./ANCHORFOOTPRINT.js"></script>
     <script src="./renderer.js"></script>
+    <script src="./ai-feedback.js?v=20250104"></script>
     <!--end::Můj kod-->
 
     <!-- Funkce showAnchor -->
@@ -2461,5 +2474,190 @@
   });
 })();
 </script>
+
+<!-- AI Feedback Panel -->
+<div id="ai-feedback-panel" class="ai-panel" style="display: none;">
+  <div class="ai-panel-header">
+    <h5><i class="bi bi-robot"></i> AI Agent</h5>
+    <div class="ai-panel-controls">
+      <button class="ai-panel-collapse" title="Collapse">−</button>
+      <button class="ai-panel-close" title="Close">&times;</button>
+    </div>
+  </div>
+  <div class="ai-panel-content">
+    <div class="ai-status">
+      <span class="badge badge-info" id="ai-status">Status: Ready</span>
+      <span class="badge badge-success" id="ai-logs">Logs: 0</span>
+    </div>
+    <div class="ai-controls">
+      <button id="start-ai-agent" class="btn btn-primary btn-sm">Start AI Agent</button>
+      <button id="stop-ai-agent" class="btn btn-danger btn-sm" style="display: none;">Stop AI Agent</button>
+    </div>
+    <div id="ai-feedback-form" class="ai-feedback-form" style="display: none;">
+      <h6>Decision Required</h6>
+      <div class="ai-context">
+        <p><strong>Time:</strong> <span id="ai-time"></span></p>
+        <p><strong>Anchors:</strong> <span id="ai-anchors"></span></p>
+        <p><strong>Crossing:</strong> <span id="ai-crossing"></span></p>
+      </div>
+      <div class="ai-buttons">
+        <button class="btn btn-success btn-sm" onclick="giveFeedback('ANO')">ANO</button>
+        <button class="btn btn-warning btn-sm" onclick="giveFeedback('NE')">NE</button>
+        <button class="btn btn-info btn-sm" onclick="giveFeedback('PROČ')">PROČ</button>
+      </div>
+      <textarea id="reason-input" class="form-control" placeholder="Vysvětlení..." style="display: none;"></textarea>
+    </div>
+    <div id="ai-suggestions" class="ai-suggestions" style="display: none;">
+      <h6><i class="bi bi-lightbulb"></i> AI Suggestions</h6>
+      <div id="suggestion-content" class="suggestion-content"></div>
+      <button id="apply-suggestion" class="btn btn-primary btn-sm">Apply Suggestion</button>
+    </div>
+  </div>
+</div>
+
+<!-- AI Feedback Styles -->
+<style>
+.ai-panel {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  width: 250px;
+  background: #f8f9fa;
+  border: none;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  z-index: 99999;
+  font-family: Arial, sans-serif;
+  cursor: move;
+  user-select: none;
+  color: #333;
+}
+
+.ai-panel-header {
+  background: #007bff;
+  color: white;
+  padding: 8px 12px;
+  border-radius: 8px 8px 0 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: move;
+}
+
+.ai-panel-controls {
+  display: flex;
+  gap: 5px;
+}
+
+.ai-panel-header h5 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.ai-panel-collapse,
+.ai-panel-close {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  transition: background-color 0.2s;
+}
+
+.ai-panel-collapse:hover,
+.ai-panel-close:hover {
+  background-color: rgba(255,255,255,0.2);
+}
+
+.ai-panel-content {
+  padding: 15px;
+}
+
+.ai-status {
+  margin-bottom: 10px;
+}
+
+.ai-status .badge {
+  margin-right: 5px;
+  color: #333 !important;
+}
+
+.ai-controls {
+  margin-bottom: 15px;
+}
+
+.ai-controls .btn {
+  margin-right: 5px;
+}
+
+.ai-feedback-form {
+  border-top: 1px solid #eee;
+  padding-top: 15px;
+  margin-top: 15px;
+}
+
+.ai-feedback-form h6 {
+  color: #007bff;
+  margin-bottom: 10px;
+}
+
+.ai-context {
+  background: #e9ecef;
+  padding: 10px;
+  border-radius: 4px;
+  margin-bottom: 10px;
+  color: #333;
+}
+
+.ai-context p {
+  margin: 5px 0;
+  font-size: 12px;
+}
+
+.ai-buttons {
+  margin-bottom: 10px;
+}
+
+.ai-buttons .btn {
+  margin-right: 5px;
+  margin-bottom: 5px;
+}
+
+.ai-suggestions {
+  border-top: 1px solid #eee;
+  padding-top: 15px;
+  margin-top: 15px;
+}
+
+.ai-suggestions h6 {
+  color: #28a745;
+  margin-bottom: 10px;
+}
+
+.suggestion-content {
+  background: #e9ecef;
+  padding: 10px;
+  border-radius: 4px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  max-height: 200px;
+  overflow-y: auto;
+  color: #333;
+}
+
+.suggestion-content pre {
+  background: #2d3748;
+  color: #e2e8f0;
+  padding: 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  overflow-x: auto;
+}
+</style>
+
 </body>
 </html>

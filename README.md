@@ -1,15 +1,45 @@
-# Animace ČEPRO
+# AI Agent pro GPS Navigaci
 
-Tento repozitář obsahuje projekt pro vizualizaci a animaci pohybu (GPS dat) v prostředí **Leaflet + AdminLTE**.  
-Cílem je vytvořit interaktivní dashboard, který načítá datasety a zobrazuje animaci na mapovém podkladu.
+## 🎯 Účel
+AI agent se učí z vašich rozhodnutí na křižovatkách a postupně se zlepšuje v navigaci.
 
----
+## 🚀 Instalace
 
-## 📂 Struktura projektu
+### 1. Instalace Python závislostí
+```bash
+pip install -r requirements.txt
+```
 
-## 🚀 Jak projekt spustit
+### 2. Nastavení OpenAI API klíče
+1. Vytvořte soubor `.env` v této složce
+2. Přidejte řádek: `OPENAI_API_KEY=your_actual_api_key_here`
+3. Získejte API klíč na: https://platform.openai.com/api-keys
 
-1. Naklonuj repozitář:
-   ```bash
-   git clone https://github.com/MARSPA69/animace_cepro.git
-   cd animace_cepro/adminlte/dist
+### 3. Spuštění
+```bash
+python agent.py
+```
+
+## 📁 Struktura souborů
+- `agent.py` - Hlavní AI agent
+- `config.py` - Konfigurace
+- `feedback_log.json` - Uložené feedbacky
+- `decision_rules.json` - Naučená pravidla
+- `requirements.txt` - Python závislosti
+
+## 🤖 Jak to funguje
+1. Agent sleduje debug logy z `debug-reporting.js`
+2. Když neví rozhodnutí → zeptá se vás
+3. Vy odpovíte (ANO/NE/PROČ)
+4. Agent se naučí a příště už ví
+
+## 📊 Formát feedbacku
+- **ANO** - jedu do segmentu F
+- **NE** - čekám na další kotvy  
+- **PROČ** - vysvětli mi situaci
+
+## 🔧 Konfigurace
+Upravte `config.py` pro změnu nastavení:
+- `CONFIDENCE_THRESHOLD` - minimální důvěra pro automatické rozhodnutí
+- `MAX_FEEDBACK_HISTORY` - maximální počet feedback záznamů
+- `ASK_USER_DELAY` - zpoždění před dotazem na uživatele
