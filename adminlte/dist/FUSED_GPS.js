@@ -666,7 +666,7 @@ function footprintForId(mid, footSrc) {
 
   // --- HLAVNÍ STAV ---
   console.log(`🔴 [CROSS-CHECK] TIME=${currentTime}, POS=${pos.lat.toFixed(6)},${pos.lng.toFixed(6)}`);
-  console.log(`🔴 [CROSS-CHECK] HIT=${hit ? `MESH=${hit.mesh_id}, ANCHORS=[${hit.matched_ids}]` : 'NO HIT'}`);
+  console.log(`🔴 [CROSS-CHECK] HIT=${hit ? `MESH=${hit.mesh_id}, RAW_IDS=[${hit.raw_ids}]` : 'NO HIT'}`);
   console.log(`🔴 [CROSS-CHECK] MODE=${crossMode.active ? `ACTIVE (${crossMode.crossing?.name})` : 'INACTIVE'}`);
 
   // --- KŘIŽOVATKA v dosahu? ---
@@ -678,7 +678,7 @@ function footprintForId(mid, footSrc) {
   const timeWindow = 15;
   for (let i = 0; i < rows.length; i++) {
     if (Math.abs(rows[i].sec - s) <= timeWindow) {
-      usable.push({ ts: rows[i].ts, ids: rows[i].a_ids });
+      usable.push({ ts: rows[i].ts, ids: rows[i].a_ids }); 
     }
   }
 
@@ -775,7 +775,8 @@ function footprintForId(mid, footSrc) {
           mesh_id: near.m.id,
           matched_ids: matched,
           matched_count: matched.length,
-          footprint: [...setFP]
+          footprint: [...setFP],
+          raw_ids: a_ids
         };
         lastHitMeshId = near.m.id;
 
@@ -975,12 +976,6 @@ function footprintForId(mid, footSrc) {
         window.FUSED_GPS.crossMode = crossMode;
       }
 
-
-
-
-
-
-
       // --- Calculate timestamp interpolated directly from number s
       const hh   = String(Math.floor(s / 3600)).padStart(2, "0");
       const mm   = String(Math.floor((s % 3600) / 60)).padStart(2, "0");
@@ -993,10 +988,16 @@ function footprintForId(mid, footSrc) {
 
       // Použij rozhodnutí z CROSS MODE pokud existuje
       if (crossMode.decision) {
-       crossDecision = crossMode.decision;
-       crossDebugHtml = `<b>${crossMode.crossing?.name || "NONE"}</b> @ ${baseRow?.ts}<br>Decision=${crossDecision}`;
-      }
+        const matchedStr = (hit?.matched_ids || []).length ? hit.matched_ids.join(",") : "–";
+        const rawStr     = (baseRow?.a_ids || []).length ? baseRow.a_ids.join(",") : "–";
 
+        crossDecision = crossMode.decision;
+        crossDebugHtml =
+          "<b>" + (crossMode.crossing?.name || "NONE") + "</b> @ " + (baseRow?.ts || "") +
+          "<br>Decision=" + crossDecision +
+          "<br>MATCHED=" + matchedStr +
+          "<br>RAW ID=" + rawStr;
+      }
 
       // --- původní rec ---
       const rec = {
@@ -1007,13 +1008,15 @@ function footprintForId(mid, footSrc) {
         speed_mps: v,
         dist_to_m: near ? near.dist : null,
         ...(hit ? hit : {}),
+        raw_ids: baseRow?.a_ids || [],
         crossDecision,
         crossDebugHtml,
         crossMode: {
           active: !!crossMode?.active,
           crossing: crossMode?.crossing || null,
           decision: crossMode?.decision || null
-        }
+        },
+      raw_ids: baseRow?.a_ids || []
       };
 
 
@@ -1037,7 +1040,19 @@ function footprintForId(mid, footSrc) {
       if (shouldLogDebug) {
         console.log(`⚠️ [WARNING] In CROSS MODE for ${s - crossMode.startTime}s but no anchors detected`);
       }
-
+      // --- SAFETY STOP: pokud 20s bez matched i raw anchors ---
+      if (crossMode.active && (s - crossMode.startTime) >= 20) {
+        const noMatched = !hit?.matched_ids?.length;
+        const noRaw = !(rec.raw_ids && rec.raw_ids.length);
+        if (noMatched && noRaw) {
+          console.error(`⛔ [ERROR NO ID] At ${baseRow?.ts} – 20s in CROSS MODE without any anchors`);
+          rec.speed_mps = 0;                // zastavit marker
+          crossMode.active = false;         // vypnout CROSS MODE
+          crossMode.decision = null;        // nulovat rozhodnutí
+          crossMode.waiting = false;
+          window.FUSED_GPS.crossMode = crossMode;
+        }
+      }
       perSecond.push(rec);
 
       // 6) Visual output only at table timestamps

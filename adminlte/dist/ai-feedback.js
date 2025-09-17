@@ -15,6 +15,7 @@ class AIFeedbackManager {
     }
     
     init() {
+        
         console.log('🤖 [AI-FEEDBACK] Initializing AI Feedback Manager...');
         
         // Get panel elements
@@ -33,9 +34,6 @@ class AIFeedbackManager {
         
         // Setup event listeners
         this.setupEventListeners();
-        
-        // Monitor debug logs from debug-reporting.js
-        this.monitorDebugLogs();
         
         console.log('✅ [AI-FEEDBACK] AI Feedback Manager initialized');
         
@@ -147,6 +145,7 @@ class AIFeedbackManager {
         this.startLogMonitoring();
         
         console.log('✅ [AI-FEEDBACK] AI Agent started');
+        console.log('✅ [AI-FEEDBACK] Monitoring for CROSS-MODE-EXIT logs...');
     }
     
     stopAIAgent() {
@@ -166,21 +165,36 @@ class AIFeedbackManager {
         if (this.feedbackForm) this.feedbackForm.style.display = 'none';
         if (this.suggestionsPanel) this.suggestionsPanel.style.display = 'none';
         
+        // Restore original console.log
+        if (window.originalConsoleLog) {
+            console.log = window.originalConsoleLog;
+            console.log('✅ [AI-FEEDBACK] Console.log restored to original');
+        }
+        
         console.log('✅ [AI-FEEDBACK] AI Agent stopped');
     }
     
     isRelevantLog(args) {
         const message = args.join(' ');
         
-        // Look for CROSS-DECISION logs
+        // Look for CROSS-DECISION logs and crossing events
         return message.includes('CROSS-DECISION') || 
                message.includes('CROSS-DEBUG') ||
-               message.includes('matched_ids');
+               message.includes('matched_ids') ||
+               message.includes('CROSS MODE ACTIVE') ||
+               message.includes('CROSS MODE EXIT') ||
+               message.includes('crossing:');
     }
     
     processLog(args) {
         const message = args.join(' ');
         console.log('🤖 [AI-FEEDBACK] Processing log:', message);
+        
+        // Check if this is a crossing exit (kulička projela křižovatku)
+        if (message.includes('CROSS-MODE-EXIT') || message.includes('CROSS MODE EXIT') || message.includes('crossing: null')) {
+            this.askCrossingFeedback(message);
+            return;
+        }
         
         // Extract information from log
         const logData = this.extractLogData(message);
@@ -291,16 +305,67 @@ class AIFeedbackManager {
             anchors: this.currentLog.anchors,
             crossing: this.currentLog.crossing,
             user_decision: decision,
-            reason: reason
+            reason: reason,
+            type: this.currentLog.type || 'decision'
         };
         
         console.log('🤖 [AI-FEEDBACK] Processing feedback:', feedbackEntry);
+        
+        // Save feedback to file
+        this.saveFeedbackToFile(feedbackEntry);
         
         // Send to AI agent (simulate for now)
         this.sendToAIAgent(feedbackEntry);
         
         // Update logs count
         this.updateLogsCount(1);
+    }
+    
+    saveFeedbackToFile(feedbackEntry) {
+        try {
+            // Get existing feedbacks
+            let feedbacks = [];
+            const existingData = localStorage.getItem('ai_feedback_logs');
+            if (existingData) {
+                feedbacks = JSON.parse(existingData);
+            }
+            
+            // Add new feedback
+            feedbacks.push(feedbackEntry);
+            
+            // Save back to localStorage
+            localStorage.setItem('ai_feedback_logs', JSON.stringify(feedbacks));
+            
+            console.log('✅ [AI-FEEDBACK] Feedback saved to localStorage');
+            
+            // Also try to save to file (if possible)
+            this.exportFeedbackToFile(feedbacks);
+            
+        } catch (error) {
+            console.error('❌ [AI-FEEDBACK] Error saving feedback:', error);
+        }
+    }
+    
+    exportFeedbackToFile(feedbacks) {
+        try {
+            const today = new Date().toISOString().split('T')[0];
+            const filename = `ai_feedback_${today}.json`;
+            
+            const blob = new Blob([JSON.stringify(feedbacks, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            console.log('✅ [AI-FEEDBACK] Feedback exported to file:', filename);
+            
+        } catch (error) {
+            console.error('❌ [AI-FEEDBACK] Error exporting feedback:', error);
+        }
     }
     
     sendToAIAgent(feedbackEntry) {
@@ -403,6 +468,25 @@ console.log('🔍 [DEBUG] Context:', context);</code></pre>
     startLogMonitoring() {
         // Start monitoring for new logs
         console.log('🔍 [AI-FEEDBACK] Log monitoring started');
+        
+        // Store original console.log
+        if (!window.originalConsoleLog) {
+            window.originalConsoleLog = console.log;
+        }
+        
+        // Override console.log to intercept logs
+        const self = this;
+        console.log = function(...args) {
+            // Call original console.log
+            window.originalConsoleLog.apply(console, args);
+            
+            // Process log for AI feedback
+            if (self.isActive && self.isRelevantLog(args)) {
+                self.processLog(args);
+            }
+        };
+        
+        console.log('✅ [AI-FEEDBACK] Console.log interception active');
     }
     
     setupDrag() {
@@ -467,6 +551,51 @@ console.log('🔍 [DEBUG] Context:', context);</code></pre>
                 collapseBtn.title = 'Expand';
             }
         }
+    }
+    
+    askCrossingFeedback(message) {
+        console.log('🤖 [AI-FEEDBACK] Kulička projela křižovatku - ptám se na feedback');
+        console.log('🤖 [AI-FEEDBACK] Message:', message);
+        
+        // Extract crossing info from message
+        const crossingMatch = message.match(/crossing: ([^,]+)/);
+        const crossing = crossingMatch ? crossingMatch[1] : 'Unknown';
+        
+        console.log('🤖 [AI-FEEDBACK] Extracted crossing:', crossing);
+        
+        // Show crossing feedback form
+        this.showCrossingFeedbackForm(crossing, message);
+    }
+    
+    showCrossingFeedbackForm(crossing, message) {
+        if (!this.feedbackForm) return;
+        
+        // Update context for crossing feedback
+        const timeElement = document.getElementById('ai-time');
+        const anchorsElement = document.getElementById('ai-anchors');
+        const crossingElement = document.getElementById('ai-crossing');
+        
+        if (timeElement) timeElement.textContent = new Date().toLocaleTimeString();
+        if (anchorsElement) anchorsElement.textContent = 'Křižovatka projeta';
+        if (crossingElement) crossingElement.textContent = crossing;
+        
+        // Update form title
+        const formTitle = this.feedbackForm.querySelector('h6');
+        if (formTitle) formTitle.textContent = 'Křižovatka projeta - byla správně?';
+        
+        // Show feedback form
+        this.feedbackForm.style.display = 'block';
+        
+        // Store crossing data
+        this.currentLog = {
+            time: new Date().toLocaleTimeString(),
+            anchors: ['Křižovatka projeta'],
+            crossing: crossing,
+            message: message,
+            type: 'crossing_exit'
+        };
+        
+        console.log('🤖 [AI-FEEDBACK] Crossing feedback form shown for:', crossing);
     }
 }
 

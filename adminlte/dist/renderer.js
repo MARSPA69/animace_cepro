@@ -1250,6 +1250,8 @@ if (document.getElementById('crossLogPanel') && window.FUSED_GPS?.crossStatus) {
       DIST TO CROSS 1: ${d1} m<br>
       DIST TO CROSS 2: ${d2} m<br>
       CROSS MODE ANCHORS: ${anchors}
+      RAW ID: ${(rec.raw_ids && rec.raw_ids.length ? rec.raw_ids.join(", ") : "—")}
+
     `;
   }
 }
