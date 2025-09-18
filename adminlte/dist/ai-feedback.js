@@ -15,8 +15,13 @@ class AIFeedbackManager {
     }
     
     init() {
+        // Emergency restore console.debug if something went wrong
+        if (window.originalConsoleLog && typeof window.originalConsoleLog === 'function') {
+            console.debug = window.originalConsoleLog;
+            console.debug('🚨 [AI-FEEDBACK] Emergency console.debug restore');
+        }
         
-        console.log('🤖 [AI-FEEDBACK] Initializing AI Feedback Manager...');
+        console.debug('🤖 [AI-FEEDBACK] Initializing AI Feedback Manager...');
         
         // Get panel elements
         this.panel = document.getElementById('ai-feedback-panel');
@@ -26,23 +31,23 @@ class AIFeedbackManager {
         this.suggestionsPanel = document.getElementById('ai-suggestions');
         
         // Debug: Check if elements exist
-        console.log('🔍 [AI-FEEDBACK] Panel found:', !!this.panel);
-        console.log('🔍 [AI-FEEDBACK] Status element found:', !!this.statusElement);
-        console.log('🔍 [AI-FEEDBACK] Logs element found:', !!this.logsElement);
-        console.log('🔍 [AI-FEEDBACK] Feedback form found:', !!this.feedbackForm);
-        console.log('🔍 [AI-FEEDBACK] Suggestions panel found:', !!this.suggestionsPanel);
+        console.debug('🔍 [AI-FEEDBACK] Panel found:', !!this.panel);
+        console.debug('🔍 [AI-FEEDBACK] Status element found:', !!this.statusElement);
+        console.debug('🔍 [AI-FEEDBACK] Logs element found:', !!this.logsElement);
+        console.debug('🔍 [AI-FEEDBACK] Feedback form found:', !!this.feedbackForm);
+        console.debug('🔍 [AI-FEEDBACK] Suggestions panel found:', !!this.suggestionsPanel);
         
         // Setup event listeners
         this.setupEventListeners();
         
-        console.log('✅ [AI-FEEDBACK] AI Feedback Manager initialized');
+        console.debug('✅ [AI-FEEDBACK] AI Feedback Manager initialized');
         
         // Test: Force show panel for debugging
         setTimeout(() => {
-            console.log('🧪 [AI-FEEDBACK] Test: Forcing panel to show...');
+            console.debug('🧪 [AI-FEEDBACK] Test: Forcing panel to show...');
             if (this.panel) {
                 this.panel.style.display = 'block';
-                console.log('🧪 [AI-FEEDBACK] Test panel should be visible now');
+                console.debug('🧪 [AI-FEEDBACK] Test panel should be visible now');
             }
         }, 2000);
     }
@@ -50,12 +55,12 @@ class AIFeedbackManager {
     setupEventListeners() {
         // Sidebar button
         const aiFeedbackBtn = document.getElementById('ai-feedback-btn');
-        console.log('🔍 [AI-FEEDBACK] AI Feedback button found:', !!aiFeedbackBtn);
+        console.debug('🔍 [AI-FEEDBACK] AI Feedback button found:', !!aiFeedbackBtn);
         
         if (aiFeedbackBtn) {
             aiFeedbackBtn.addEventListener('click', (e) => {
                 e.preventDefault();
-                console.log('🤖 [AI-FEEDBACK] AI Feedback button clicked!');
+                console.debug('🤖 [AI-FEEDBACK] AI Feedback button clicked!');
                 this.togglePanel();
             });
         } else {
@@ -95,11 +100,11 @@ class AIFeedbackManager {
     }
     
     togglePanel() {
-        console.log('🤖 [AI-FEEDBACK] togglePanel called');
-        console.log('🔍 [AI-FEEDBACK] Panel exists:', !!this.panel);
+        console.debug('🤖 [AI-FEEDBACK] togglePanel called');
+        console.debug('🔍 [AI-FEEDBACK] Panel exists:', !!this.panel);
         
         if (this.panel) {
-            console.log('🔍 [AI-FEEDBACK] Current display:', this.panel.style.display);
+            console.debug('🔍 [AI-FEEDBACK] Current display:', this.panel.style.display);
             if (this.panel.style.display === 'none') {
                 this.showPanel();
             } else {
@@ -113,22 +118,22 @@ class AIFeedbackManager {
     showPanel() {
         if (this.panel) {
             this.panel.style.display = 'block';
-            console.log('🤖 [AI-FEEDBACK] Panel shown');
-            console.log('🔍 [AI-FEEDBACK] Panel position:', this.panel.style.position);
-            console.log('🔍 [AI-FEEDBACK] Panel z-index:', window.getComputedStyle(this.panel).zIndex);
-            console.log('🔍 [AI-FEEDBACK] Panel dimensions:', this.panel.offsetWidth + 'x' + this.panel.offsetHeight);
+            console.debug('🤖 [AI-FEEDBACK] Panel shown');
+            console.debug('🔍 [AI-FEEDBACK] Panel position:', this.panel.style.position);
+            console.debug('🔍 [AI-FEEDBACK] Panel z-index:', window.getComputedStyle(this.panel).zIndex);
+            console.debug('🔍 [AI-FEEDBACK] Panel dimensions:', this.panel.offsetWidth + 'x' + this.panel.offsetHeight);
         }
     }
     
     hidePanel() {
         if (this.panel) {
             this.panel.style.display = 'none';
-            console.log('🤖 [AI-FEEDBACK] Panel hidden');
+            console.debug('🤖 [AI-FEEDBACK] Panel hidden');
         }
     }
     
     startAIAgent() {
-        console.log('🚀 [AI-FEEDBACK] Starting AI Agent...');
+        console.debug('🚀 [AI-FEEDBACK] Starting AI Agent...');
         
         this.isActive = true;
         this.updateStatus('Running', 'info');
@@ -144,12 +149,12 @@ class AIFeedbackManager {
         // Start monitoring debug logs
         this.startLogMonitoring();
         
-        console.log('✅ [AI-FEEDBACK] AI Agent started');
-        console.log('✅ [AI-FEEDBACK] Monitoring for CROSS-MODE-EXIT logs...');
+        console.debug('✅ [AI-FEEDBACK] AI Agent started');
+        console.debug('✅ [AI-FEEDBACK] Monitoring for CROSS-MODE-EXIT logs...');
     }
     
     stopAIAgent() {
-        console.log('⏹️ [AI-FEEDBACK] Stopping AI Agent...');
+        console.debug('⏹️ [AI-FEEDBACK] Stopping AI Agent...');
         
         this.isActive = false;
         this.updateStatus('Stopped', 'warning');
@@ -165,13 +170,18 @@ class AIFeedbackManager {
         if (this.feedbackForm) this.feedbackForm.style.display = 'none';
         if (this.suggestionsPanel) this.suggestionsPanel.style.display = 'none';
         
-        // Restore original console.log
+        // Restore original console.debug
         if (window.originalConsoleLog) {
-            console.log = window.originalConsoleLog;
-            console.log('✅ [AI-FEEDBACK] Console.log restored to original');
+            console.debug = window.originalConsoleLog;
+            console.debug('✅ [AI-FEEDBACK] console.debug restored to original');
         }
         
-        console.log('✅ [AI-FEEDBACK] AI Agent stopped');
+        // Force restore console.debug if something went wrong
+        if (typeof window.originalConsoleLog === 'function') {
+            console.debug = window.originalConsoleLog;
+        }
+        
+        console.debug('✅ [AI-FEEDBACK] AI Agent stopped');
     }
     
     isRelevantLog(args) {
@@ -188,7 +198,7 @@ class AIFeedbackManager {
     
     processLog(args) {
         const message = args.join(' ');
-        console.log('🤖 [AI-FEEDBACK] Processing log:', message);
+        console.debug('🤖 [AI-FEEDBACK] Processing log:', message);
         
         // Check if this is a crossing exit (kulička projela křižovatku)
         if (message.includes('CROSS-MODE-EXIT') || message.includes('CROSS MODE EXIT') || message.includes('crossing: null')) {
@@ -206,11 +216,27 @@ class AIFeedbackManager {
     }
     
     onLog(logEntry) {
+    // Vytáhneme text zprávy
+    const msg = (typeof logEntry?.message === 'string')
+        ? logEntry.message
+        : Array.isArray(logEntry) ? logEntry.join(' ') : String(logEntry || '');
+
+    // 🚫 OCHRANA: ignoruj logy, které si AI-FEEDBACK píše samo
+    if (msg.includes('[AI-FEEDBACK]') || msg.includes('[AIFB]')) {
+        return;
+    }
+
     if (!this.isActive) return;
-    if (this.isRelevantLog([logEntry.message])) {
-        this.processLog([logEntry.message]);
+
+    if (this.isRelevantLog([msg])) {
+        try {
+            this.processLog([msg]);
+        } catch (err) {
+            console.error('❌ [AI-FEEDBACK] processLog error:', err);
+        }
     }
 }
+
 
     extractLogData(message) {
         try {
@@ -269,13 +295,13 @@ class AIFeedbackManager {
         // Show feedback form
         this.feedbackForm.style.display = 'block';
         
-        console.log('🤖 [AI-FEEDBACK] Feedback form shown for:', logData);
+        console.debug('🤖 [AI-FEEDBACK] Feedback form shown for:', logData);
     }
     
     giveFeedback(decision) {
         if (!this.currentLog) return;
         
-        console.log('🤖 [AI-FEEDBACK] User feedback:', decision);
+        console.debug('🤖 [AI-FEEDBACK] User feedback:', decision);
         
         // Hide feedback form
         if (this.feedbackForm) this.feedbackForm.style.display = 'none';
@@ -309,7 +335,7 @@ class AIFeedbackManager {
             type: this.currentLog.type || 'decision'
         };
         
-        console.log('🤖 [AI-FEEDBACK] Processing feedback:', feedbackEntry);
+        console.debug('🤖 [AI-FEEDBACK] Processing feedback:', feedbackEntry);
         
         // Save feedback to file
         this.saveFeedbackToFile(feedbackEntry);
@@ -336,7 +362,7 @@ class AIFeedbackManager {
             // Save back to localStorage
             localStorage.setItem('ai_feedback_logs', JSON.stringify(feedbacks));
             
-            console.log('✅ [AI-FEEDBACK] Feedback saved to localStorage');
+            console.debug('✅ [AI-FEEDBACK] Feedback saved to localStorage');
             
             // Also try to save to file (if possible)
             this.exportFeedbackToFile(feedbacks);
@@ -361,7 +387,7 @@ class AIFeedbackManager {
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
             
-            console.log('✅ [AI-FEEDBACK] Feedback exported to file:', filename);
+            console.debug('✅ [AI-FEEDBACK] Feedback exported to file:', filename);
             
         } catch (error) {
             console.error('❌ [AI-FEEDBACK] Error exporting feedback:', error);
@@ -371,7 +397,7 @@ class AIFeedbackManager {
     sendToAIAgent(feedbackEntry) {
         // For now, simulate AI response
         // In real implementation, this would send to Python AI agent
-        console.log('🤖 [AI-FEEDBACK] Sending to AI agent:', feedbackEntry);
+        console.debug('🤖 [AI-FEEDBACK] Sending to AI agent:', feedbackEntry);
         
         // Simulate AI suggestion after delay
         setTimeout(() => {
@@ -394,7 +420,7 @@ class AIFeedbackManager {
         // Show suggestions panel
         this.suggestionsPanel.style.display = 'block';
         
-        console.log('🤖 [AI-FEEDBACK] AI suggestion shown');
+        console.debug('🤖 [AI-FEEDBACK] AI suggestion shown');
     }
     
     generateMockSuggestion(feedbackEntry) {
@@ -410,7 +436,7 @@ function validateAnchors(anchors) {
     const segmentAAnchors = [11, 12, 13];
     
     if (anchors.every(a => overlapAnchors.includes(parseInt(a)))) {
-        console.log('⏳ Waiting for segment A anchors...');
+        console.debug('⏳ Waiting for segment A anchors...');
         return false;
     }
     return true;
@@ -422,7 +448,7 @@ function validateAnchors(anchors) {
                 <p><strong>Recommendation:</strong> Proceed to segment A</p>
                 <pre><code>// Update decision logic in FUSED_GPS.js
 if (anchors.some(a => [11, 12, 13].includes(parseInt(a)))) {
-    console.log('✅ Segment A anchors detected - proceeding');
+    console.debug('✅ Segment A anchors detected - proceeding');
     return "A";
 }</code></pre>
             `;
@@ -431,14 +457,14 @@ if (anchors.some(a => [11, 12, 13].includes(parseInt(a)))) {
                 <p><strong>AI Analysis:</strong> Situation requires clarification</p>
                 <p><strong>Recommendation:</strong> Review anchor configuration</p>
                 <pre><code>// Add debug logging in FUSED_GPS.js
-console.log('🔍 [DEBUG] Anchors:', anchors, 'Crossing:', crossing);
-console.log('🔍 [DEBUG] Context:', context);</code></pre>
+console.debug('🔍 [DEBUG] Anchors:', anchors, 'Crossing:', crossing);
+console.debug('🔍 [DEBUG] Context:', context);</code></pre>
             `;
         }
     }
     
     applySuggestion() {
-        console.log('🤖 [AI-FEEDBACK] Applying suggestion...');
+        console.debug('🤖 [AI-FEEDBACK] Applying suggestion...');
         
         // In real implementation, this would apply the code suggestion
         // For now, just show a message
@@ -467,26 +493,30 @@ console.log('🔍 [DEBUG] Context:', context);</code></pre>
     
     startLogMonitoring() {
         // Start monitoring for new logs
-        console.log('🔍 [AI-FEEDBACK] Log monitoring started');
+        console.debug('🔍 [AI-FEEDBACK] Log monitoring started');
         
-        // Store original console.log
+        // Store original console.debug
         if (!window.originalConsoleLog) {
-            window.originalConsoleLog = console.log;
+            window.originalConsoleLog = console.debug;
         }
         
-        // Override console.log to intercept logs
+        // Override console.debug to intercept logs
         const self = this;
-        console.log = function(...args) {
-            // Call original console.log
+        console.debug = function(...args) {
+            // Call original console.debug FIRST
             window.originalConsoleLog.apply(console, args);
             
-            // Process log for AI feedback
+            // Process log for AI feedback ONLY if active
             if (self.isActive && self.isRelevantLog(args)) {
-                self.processLog(args);
+                try {
+                    self.processLog(args);
+                } catch (error) {
+                    console.error('❌ [AI-FEEDBACK] Error processing log:', error);
+                }
             }
         };
         
-        console.log('✅ [AI-FEEDBACK] Console.log interception active');
+        console.debug('✅ [AI-FEEDBACK] console.debug interception active');
     }
     
     setupDrag() {
@@ -554,14 +584,14 @@ console.log('🔍 [DEBUG] Context:', context);</code></pre>
     }
     
     askCrossingFeedback(message) {
-        console.log('🤖 [AI-FEEDBACK] Kulička projela křižovatku - ptám se na feedback');
-        console.log('🤖 [AI-FEEDBACK] Message:', message);
+        console.debug('🤖 [AI-FEEDBACK] Kulička projela křižovatku - ptám se na feedback');
+        console.debug('🤖 [AI-FEEDBACK] Message:', message);
         
         // Extract crossing info from message
         const crossingMatch = message.match(/crossing: ([^,]+)/);
         const crossing = crossingMatch ? crossingMatch[1] : 'Unknown';
         
-        console.log('🤖 [AI-FEEDBACK] Extracted crossing:', crossing);
+        console.debug('🤖 [AI-FEEDBACK] Extracted crossing:', crossing);
         
         // Show crossing feedback form
         this.showCrossingFeedbackForm(crossing, message);
@@ -595,7 +625,7 @@ console.log('🔍 [DEBUG] Context:', context);</code></pre>
             type: 'crossing_exit'
         };
         
-        console.log('🤖 [AI-FEEDBACK] Crossing feedback form shown for:', crossing);
+        console.debug('🤖 [AI-FEEDBACK] Crossing feedback form shown for:', crossing);
     }
 }
 
@@ -608,7 +638,7 @@ function giveFeedback(decision) {
 
 // Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
-    console.log('🤖 [AI-FEEDBACK] DOM ready, initializing...');
+    console.debug('🤖 [AI-FEEDBACK] DOM ready, initializing...');
     window.aiFeedbackManager = new AIFeedbackManager();
 });
 

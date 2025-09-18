@@ -33,6 +33,24 @@ let lastUi = { fIdx: -1, bIdx: -1 };
 let fgpsIdx = 0;   // index F_GPS pro BOTH
 let gnssIdx = 0;   // index GNSS pro BOTH
 let ANCHOR_TO_SEG = null;
+let incidentCounter = 0;
+
+
+// --- HOOK pro FUSED_GPS dataset ---
+window.applyFusedGpsDataset = function(fused) {
+  console.log("✅ [RENDERER] Přijat fused dataset:", fused.length, "záznamů");
+  animationData = fused; // přepíšeme dataset pro animaci
+  idx = 0;               // reset indexu
+};
+
+// --- Listener fallback ---
+window.addEventListener("FUSED_GPS_READY", e => {
+  const fused = e.detail.fused;
+  console.log("✅ [RENDERER] Přijat fused dataset přes event:", fused.length, "záznamů");
+  animationData = fused;
+  idx = 0;
+});
+
 
 // --- vždy vrátí hezký časový string, nikdy Date ani ms
 function getRecTimeStr(rec) {
@@ -699,9 +717,27 @@ function checkIncidents(point) {
   // Vstoupili jsme do červené zóny
   if (inRed && !prevInRed) {
     prevInRed = true;
-    incidentLog.push({ inMs: window._lastRecMs, inStr: window._lastRecStr, outMs: null, outStr: null, duration: null });
+    incidentCounter++;
+    incidentLog.push({
+      id: incidentCounter,
+      inMs: window._lastRecMs,
+      inStr: window._lastRecStr,
+      outMs: null,
+      outStr: null,
+      duration: null
+    });
     updateIncidentBoxes();
+
+    console.log(
+      `%c🚨 [INCIDENT-START #%d]%c IN=%s (%d ms)`,
+      "color: red; font-weight: bold;",
+      incidentCounter,
+      "color: inherit;",
+      window._lastRecStr,
+      window._lastRecMs
+    );
   }
+
   // Opustili jsme červenou zónu
   if (!inRed && prevInRed) {
     prevInRed = false;
@@ -710,6 +746,16 @@ function checkIncidents(point) {
     last.outStr   = window._lastRecStr;
     last.duration = Math.round((last.outMs - last.inMs) / 1000);
     updateIncidentBoxes();
+
+    console.log(
+      `%c✅ [INCIDENT-END #%d]%c OUT=%s (%d ms) | IN=%s (%d ms) | DURATION=%ds`,
+      "color: green; font-weight: bold;",
+      last.id,
+      "color: inherit;",
+      last.outStr, last.outMs,
+      last.inStr, last.inMs,
+      last.duration
+    );
   }
 }
 
@@ -1250,7 +1296,7 @@ if (document.getElementById('crossLogPanel') && window.FUSED_GPS?.crossStatus) {
       DIST TO CROSS 1: ${d1} m<br>
       DIST TO CROSS 2: ${d2} m<br>
       CROSS MODE ANCHORS: ${anchors}
-      RAW ID: ${(rec.raw_ids && rec.raw_ids.length ? rec.raw_ids.join(", ") : "—")}
+      RAW ID: ${(rec.raw_ids && rec.raw_ids.length ? rec.raw_ids.join(", ") : "—")}<br>
 
     `;
   }
@@ -2300,17 +2346,28 @@ let bothPaused = false;
 let FGPS_LAG_MS = 35000;
 
 // Jednotné získání ms z Date/number
-const msOf = t => (t instanceof Date ? t.getTime() : Number(t));
+function msOf(t) {
+  if (!t) return 0;
 
-// fallback 1Hz rychlost mezi sousedy
-function speedFromNeighbors(series, i) {
-  if (!series?.length || i <= 0 || i >= series.length) return null;
-  const a = series[i-1], b = series[i];
-  const dt = (msOf(b.time) - msOf(a.time)) / 1000;
-  if (dt <= 0) return null;
-  const dist = haversine(a.lat, a.lng, b.lat, b.lng);
-  return dist / dt;
+  if (t instanceof Date) {
+    return t.getTime();
+  }
+
+  if (typeof t === "number" && !isNaN(t)) {
+    return t;
+  }
+
+  if (typeof t === "string") {
+    const parts = t.split(":").map(Number);
+    if (parts.length === 3 && parts.every(n => !isNaN(n))) {
+      const [h, m, s] = parts;
+      return ((h * 3600) + (m * 60) + s) * 1000;
+    }
+  }
+
+  return 0;
 }
+
 
 // Najdi nejlepší MESH kandidát podle průniku kotev
 function bestMeshByAnchors(lat, lng, anchorIds, maxDist=25) { // hledáme v okruhu 25 m

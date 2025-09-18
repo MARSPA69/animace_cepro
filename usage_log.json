@@ -25,5 +25,23 @@
     "input_tokens": 31,
     "output_tokens": 26,
     "total_tokens": 57
+  },
+  {
+    "timestamp": "2025-09-17T23:13:41.915320",
+    "prompt": "Testovací dotaz – napiš jednu větu, že funguje připojení k API.",
+    "reply": "Ano, API připojení funguje správně.",
+    "used_model": "claude-3-5-haiku-20241022",
+    "input_tokens": 31,
+    "output_tokens": 15,
+    "total_tokens": 46
+  },
+  {
+    "timestamp": "2025-09-18T00:46:57.679691",
+    "prompt": "Testovací dotaz – napiš jednu větu, že funguje připojení k API.",
+    "reply": "API připojení funguje správně a je připraveno k použití.",
+    "used_model": "claude-3-5-haiku-20241022",
+    "input_tokens": 31,
+    "output_tokens": 20,
+    "total_tokens": 51
   }
 ]

@@ -428,6 +428,8 @@ function footprintForId(mid, footSrc) {
     const TABLESRC = (typeof BASIC_TABLE_04062025 !== "undefined")
       ? BASIC_TABLE_04062025
       : (window.BASIC_TABLE_04062025 || []);
+    // Alias pro starší kód, aby se neházel ReferenceError
+    const BASIC_TABLE = BASIC_TABLE_04062025;
     const rowsRaw = Array.isArray(TABLESRC) ? TABLESRC : [];
 
     console.log("🔍 [DEBUG] MGPS.length=", MGPS.length, "rowsRaw.length=", rowsRaw.length);
@@ -999,10 +1001,41 @@ function footprintForId(mid, footSrc) {
           "<br>RAW ID=" + rawStr;
       }
 
+      let rawIds = [];
+      if (baseRow?.ts) {
+        let row = BASIC_TABLE.find(r => r.ts === baseRow.ts);
+        if (!row) {
+          row = findClosestRow(BASIC_TABLE, baseRow.ts);
+          console.warn(`⚠️ [RAW-ID] Přesná shoda nenalezena pro ts=${baseRow.ts}, použit nejbližší=${row?.ts}`);
+        }
+        if (row) {
+          rawIds = extractAnchorIds(row);
+        }
+      }
+
+// Logování
+      if (rawIds.length > 0) {
+        console.log(`🟢 [RAW-ID] ts=${baseRow.ts}, raw_ids=[${rawIds.join(",")}]`);
+     } else {
+        console.warn(`⚠️ [RAW-ID] ts=${baseRow.ts}, žádné kotvy v BASIC_TABLE`);
+     }
+
+     function parseTimeToMs(str) {
+       if (!str || typeof str !== "string") return NaN;
+       const parts = str.split(":");
+       if (parts.length !== 3) return NaN;
+       const [hh, mm, ss] = parts.map(Number);
+       if ([hh, mm, ss].some(n => isNaN(n))) return NaN;
+       return ((hh * 3600) + (mm * 60) + ss) * 1000;
+    }
+
+
+
       // --- původní rec ---
       const rec = {
         sec: s,
-        timeStr: baseRow?.ts || "00:00:00",
+        timeStr: baseRow?.TIME || baseRow?.ts || "00:00:00",
+        time: parseTimeToMs(baseRow?.TIME || baseRow?.ts || "00:00:00"),
         lat: latFinal,
         lng: lngFinal,
         speed_mps: v,
@@ -1015,11 +1048,16 @@ function footprintForId(mid, footSrc) {
           active: !!crossMode?.active,
           crossing: crossMode?.crossing || null,
           decision: crossMode?.decision || null
-        },
-      raw_ids: baseRow?.a_ids || []
-      };
+      }
+    };
 
 
+      // 🔍 DEBUG: Zkontroluj načtené kotvy
+       if (baseRow?.ts && rec.raw_ids?.length) {
+        console.log(`🟢 [RAW-ID] ts=${baseRow.ts}, raw_ids=[${rec.raw_ids.join(", ")}]`);
+      } else if (baseRow?.ts) {
+  console.warn(`⚠️ [RAW-ID] ts=${baseRow.ts}, žádné kotvy v baseRow.a_ids`);
+      }
       // DEBUG for first 10 seconds
       if (s - startSec < 10) {
         console.log(
@@ -1067,6 +1105,36 @@ function footprintForId(mid, footSrc) {
     window.fusedLog = { per_second: perSecond, viz_rows: out };
     return out;
   }
+  
+  function findClosestRow(table, ts) {
+  if (!ts) return null;
+  const target = toSeconds(ts);
+
+  let bestRow = null;
+  let bestDiff = Infinity;
+  for (const r of table) {
+    const diff = Math.abs(toSeconds(r.ts) - target);
+    if (diff < bestDiff) {
+      bestDiff = diff;
+      bestRow = r;
+    }
+  }
+  return bestRow;
+}
+
+function toSeconds(str) {
+  const [h, m, s] = str.split(":").map(Number);
+  return h * 3600 + m * 60 + s;
+}
+
+function extractAnchorIds(row) {
+  const ids = [];
+  for (let i = 1; i <= 50; i++) { // nebo podle počtu sloupců
+    const val = row[`ANCHOR${i}`];
+    if (val && !isNaN(val)) ids.push(Number(val));
+  }
+  return ids;
+}
 
   // ---------- Save dataset as .js (with current structure) ----------
   

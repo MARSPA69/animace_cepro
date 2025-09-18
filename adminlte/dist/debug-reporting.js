@@ -142,11 +142,6 @@
     const message = args.join(' ');
     const timestamp = new Date();
     
-    if (window.aiFeedbackManager && typeof window.aiFeedbackManager.onLog === "function") {
-    window.aiFeedbackManager.onLog(logEntry);
-}
-
-
     const logEntry = {
       timestamp: timestamp,
       level: level,
@@ -158,6 +153,11 @@
     };
 
     this.logs.push(logEntry);
+    
+    // Send to AI feedback manager if available
+    if (window.aiFeedbackManager && typeof window.aiFeedbackManager.onLog === "function") {
+      window.aiFeedbackManager.onLog(logEntry);
+    }
   },
 
 // Nová metoda: snapshot stavu FUSED_GPS a rendereru
