@@ -165,17 +165,29 @@ function getRowTimestamp(r) {
 
   // Extract anchor IDs from table row, trying various field name patterns
   function readAnchors(row) {
+    // DEBUG: Logování vstupu do readAnchors - OPRAVA: kontroluj všechny ANCHOR pole, i když jsou 0
+    if (row.TIME && (row.ANCHOR1 !== undefined || row.ANCHOR2 !== undefined || row.ANCHOR3 !== undefined || row.ANCHOR4 !== undefined || row.ANCHOR5 !== undefined || row.ANCHOR6 !== undefined)) {
+      console.log(`🔍 [READ-ANCHORS] Input ts=${row.TIME}, ANCHOR1=${row.ANCHOR1}, ANCHOR2=${row.ANCHOR2}, ANCHOR3=${row.ANCHOR3}, ANCHOR4=${row.ANCHOR4}, ANCHOR5=${row.ANCHOR5}, ANCHOR6=${row.ANCHOR6}`);
+    }
+    
     if (Array.isArray(row.Footprints)) {
-      return uniq(row.Footprints.map(Number).filter(n => Number.isFinite(n) && n > 0));
+      const result = uniq(row.Footprints.map(Number).filter(n => Number.isFinite(n) && n > 0));
+      console.log(`🔍 [READ-ANCHORS] Footprints result:`, result);
+      return result;
     }
     let keys = Object.keys(row).filter(k => /^KOTVA\d+$/i.test(k));
     if (keys.length) {
-      return uniq(keys.map(k => Number(row[k])).filter(n => Number.isFinite(n) && n > 0));
+      const result = uniq(keys.map(k => Number(row[k])).filter(n => Number.isFinite(n) && n > 0));
+      console.log(`🔍 [READ-ANCHORS] KOTVA result:`, result);
+      return result;
     }
     keys = Object.keys(row).filter(k => /^ANCHOR\d+$/i.test(k));
     if (keys.length) {
-      return uniq(keys.map(k => Number(row[k])).filter(n => Number.isFinite(n) && n > 0));
+      const result = uniq(keys.map(k => Number(row[k])).filter(n => Number.isFinite(n) && n > 0));
+      console.log(`🔍 [READ-ANCHORS] ANCHOR result:`, result);
+      return result;
     }
+    console.log(`🔍 [READ-ANCHORS] No anchors found, returning []`);
     return [];
   }
 
@@ -540,18 +552,24 @@ function buildFusedSeries() {
   function rollAvg(){ return q.length ? (qSum / q.length) : 0; }
 
 
-  const rows = dedupRows(rowsRaw).map(r => {
+  // DEBUG: Logování před dedupRows
+  console.log("🔍 [RAW-FIRST-10]", rowsRaw.slice(0,10));
+  
+  // DEBUG: Logování po dedupRows, ale před filter
+  const tmp = dedupRows(rowsRaw).map(r => {
     const ts  = getRowTimestamp(r);
     const sec = parseHmsToSec(ts);
     const a_ids = readAnchors(r);
-    
-    // DEBUG: Logování BASIC_TABLE kotev
-    if (a_ids && a_ids.length > 0) {
-      console.log(`🔍 [BASIC-TABLE] ts=${ts}, a_ids=[${a_ids.join(',')}]`);
-    }
-    
+    console.log(`🔍 [DEBUG-ROW] ts=${ts}, sec=${sec}, speed=${getRowSpeed(r)}, anchors=[${a_ids.join(',')}]`);
     return { ts, sec, speed: getRowSpeed(r), a_ids };
-  }).filter(x => x.sec != null).sort((a,b)=>a.sec-b.sec);
+  });
+  
+  const rows = tmp.filter(x => x.sec != null).sort((a,b)=>a.sec-b.sec);
+
+  // DEBUG: Kontrola rows array
+  console.log(`🔍 [ROWS-DEBUG] rows.length=${rows.length}`);
+  console.log(`🔍 [ROWS-DEBUG] První 5 řádků:`, rows.slice(0, 5));
+  console.log(`🔍 [ROWS-DEBUG] Poslední 5 řádků:`, rows.slice(-5));
 
   if (!rows.length) return [];
 
@@ -606,6 +624,11 @@ for (let i = 0; i < rows.length; i++) {
   const dt      = Math.max(0, s - lastSec); // delta sekund mezi řádky
   const v       = Math.max(0, +baseRow.speed || 0);  // m/s z řádku
   const stepM   = v * dt;
+  
+  // DEBUG: Logování hlavní smyčky
+  if (i < 10) {
+    console.log(`🔍 [LOOP-DEBUG] i=${i}, baseRow.ts=${baseRow.ts}, baseRow.sec=${baseRow.sec}`);
+  }
 
   // 1) posun po MIDAXIS
   if (stepM > 0) walker.step(stepM);
