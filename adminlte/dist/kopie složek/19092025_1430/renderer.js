@@ -458,17 +458,8 @@ const pickLng = o => {
 };
 
 function makeAnimSeries(src) {
-  console.log("🔧 [MAKE-ANIM-SERIES] Input src length:", src ? src.length : 0);
-  console.log("🔧 [MAKE-ANIM-SERIES] First 3 records:", src ? src.slice(0, 3) : []);
-  
-  const result = (src || [])
-    .filter(d => {
-      const hasValidCoords = d && Number.isFinite(+d.lat) && Number.isFinite(+d.lng);
-      if (!hasValidCoords) {
-        console.log("🔧 [MAKE-ANIM-SERIES] Filtered out record:", d);
-      }
-      return hasValidCoords;
-    })
+  return (src || [])
+    .filter(d => d && Number.isFinite(+d.lat) && Number.isFinite(+d.lng))
     .map(d => {
       // čas řešíme jednoduše:
       let tms = null;
@@ -489,6 +480,7 @@ function makeAnimSeries(src) {
         time: Number(d.time),        // číselně
         timeStr: d.timeStr || "00:00:00",
 
+
         lat,
         lng,
         speed_mps:     (d.speed_mps ?? null),
@@ -496,15 +488,9 @@ function makeAnimSeries(src) {
         mesh_id:       (d.mesh_id ?? null),
         matched_count: (d.matched_count ?? 0),
         matched_ids:   Array.isArray(d.matched_ids) ? d.matched_ids : [],
-        raw_ids:       Array.isArray(d.raw_ids) ? d.raw_ids : (d.a_ids || []),
         crossMode: d.crossMode || { active: false, crossing: null, decision: null }
       };
     });
-    
-  console.log("🔧 [MAKE-ANIM-SERIES] Output result length:", result.length);
-  console.log("🔧 [MAKE-ANIM-SERIES] First 3 processed records:", result.slice(0, 3));
-  
-  return result;
 }
 console.log('sample realData[0]:', window.realData && window.realData[0]);
 
@@ -1086,31 +1072,10 @@ function startAnimation() {
   }
 
   // Prepare animation data by converting raw data to animation series format
-  console.log("🔧 [START-ANIMATION] About to call makeAnimSeries with window.realData length:", window.realData ? window.realData.length : 0);
   animationData = makeAnimSeries(window.realData);
-  console.log("🔧 [START-ANIMATION] makeAnimSeries returned length:", animationData.length);
-  
   if (!animationData.length) {
-    console.error("❌ [START-ANIMATION] Nejsou načtena reálná data pro animaci (po makeAnimSeries).");
-    console.error("❌ [START-ANIMATION] window.realData:", window.realData);
-    console.error("❌ [START-ANIMATION] animationData:", animationData);
-    
-    // KRÁTKODOBÉ ŘEŠENÍ: Zkusit použít UniversalDataManager jako fallback
-    if (window.universalDataManager) {
-      console.log("🔧 [START-ANIMATION] Fallback: Zkouším UniversalDataManager...");
-      const fallbackData = window.universalDataManager.getCurrentData();
-      console.log("🔧 [START-ANIMATION] UniversalDataManager fallback length:", fallbackData.length);
-      if (fallbackData.length > 0) {
-        animationData = fallbackData;
-        console.log("✅ [START-ANIMATION] Fallback úspěšný, použito UniversalDataManager data");
-      } else {
-        console.error("❌ [START-ANIMATION] Fallback také selhal");
-        return;
-      }
-    } else {
-      console.error("❌ [START-ANIMATION] UniversalDataManager není k dispozici");
-      return;
-    }
+    console.error("Nejsou načtena reálná data pro animaci (po makeAnimSeries).");
+    return;
   }
 
   // Create or update the main animation marker
@@ -1283,15 +1248,7 @@ const step = () => {
     return;
   }
   
-  // DEBUG: Logování stavu animace
-  if (idx % 100 === 0 || idx < 10) { // Log každých 100 kroků nebo prvních 10
-    console.log(`🔧 [STEP] idx=${idx}, animationData.length=${animationData.length}, animationActive=${animationActive}, playbackSpeed=${playbackSpeed}`);
-  }
-  
   if (!animationActive || idx >= animationData.length - 1 || playbackSpeed <= 0) {
-    if (idx >= animationData.length - 1) {
-      console.log(`🏁 [STEP] Animace dokončena - idx=${idx}, animationData.length=${animationData.length}`);
-    }
     if (window.timer) {
       clearTimeout(window.timer);
       window.timer = null;
@@ -1338,9 +1295,9 @@ if (document.getElementById('crossLogPanel') && window.FUSED_GPS?.crossStatus) {
       <b>CROSS 2 G/B/B_mezzanin</b>: MODE=${mode.active && mode.crossing?.name==="G/B/B_mezzanin" ? "ANO" : "NE"}<br>
       DIST TO CROSS 1: ${d1} m<br>
       DIST TO CROSS 2: ${d2} m<br>
-      CROSS MODE ANCHORS: ${anchors}<br>
+      CROSS MODE ANCHORS: ${anchors}
       RAW ID: ${(rec.raw_ids && rec.raw_ids.length ? rec.raw_ids.join(", ") : "—")}<br>
-      <b>DEBUG:</b> raw_ids=${JSON.stringify(rec.raw_ids)}, matched_ids=${JSON.stringify(rec.matched_ids)}<br>
+
     `;
   }
 }
@@ -1624,12 +1581,6 @@ if (mode === 'offlinegnss') {
 
   // Příprava na další krok
   idx++;
-  
-  // DEBUG: Logování každých 50 kroků pro sledování průběhu
-  if (idx % 50 === 0) {
-    console.log(`🔧 [STEP-PROGRESS] idx=${idx}/${animationData.length}, timeStr=${rec.timeStr}, lat=${rec.lat.toFixed(6)}, lng=${rec.lng.toFixed(6)}`);
-  }
-  
   window.timer = setTimeout(step, delay);
 };
 window.animationStep = step;

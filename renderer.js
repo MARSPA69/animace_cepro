@@ -223,29 +223,329 @@ function updateCrossModePanel() {
   }
 }
 
+// --- Univerzální datový manager ---
+class UniversalDataManager {
+  constructor() {
+    this.dataSources = {
+      gnss: null,           // RENDERER1-10 data
+      offline: null,        // BASIC_TABLE data
+      fused: null          // Výsledek FUSED_GPS zpracování
+    };
+    
+    this.animationMode = 'single'; // 'single', 'both', 'comparison'
+    this.currentData = [];
+    this.gnssData = [];
+    this.offlineData = [];
+  }
+  
+  // Detekce typu datového zdroje
+  detectDataSource(data) {
+    if (Array.isArray(data)) {
+      const firstItem = data[0];
+      
+      // GNSS data - mají přímo lat/lng
+      if (firstItem && typeof firstItem.lat === 'number' && typeof firstItem.lng === 'number') {
+        return 'gnss';
+      }
+      
+      // BASIC_TABLE data - mají TIME, SPEED, ANCHOR1-6
+      if (firstItem && firstItem.TIME && typeof firstItem.SPEED === 'number') {
+        return 'offline';
+      }
+      
+      // FUSED_GPS data - mají crossMode, raw_ids, atd.
+      if (firstItem && (firstItem.crossMode || firstItem.raw_ids)) {
+        return 'fused';
+      }
+    }
+    
+    return 'unknown';
+  }
+  
+  // Nastavení datového zdroje podle typu
+  setDataSource(data, sourceType = null) {
+    const detectedType = sourceType || this.detectDataSource(data);
+    
+    switch (detectedType) {
+      case 'gnss':
+        this.dataSources.gnss = data;
+        this.gnssData = this.normalizeGnssData(data);
+        break;
+        
+      case 'offline':
+        this.dataSources.offline = data;
+        // Offline data se zpracují přes FUSED_GPS
+        this.processOfflineData(data);
+        break;
+        
+      case 'fused':
+        this.dataSources.fused = data;
+        this.offlineData = this.normalizeFusedData(data);
+        break;
+        
+      default:
+        console.warn('❌ [DATA-MANAGER] Neznámý typ dat:', detectedType);
+    }
+    
+    this.updateCurrentData();
+  }
+  
+  // Normalizace GNSS dat (RENDERER1-10)
+  normalizeGnssData(gnssData) {
+    return gnssData.map(item => ({
+      point: turf.point([item.lng, item.lat]),
+      time: new Date(item.timestamp),
+      lat: item.lat,
+      lng: item.lng,
+      source: 'gnss',
+      raw_ids: [],
+      crossMode: { active: false },
+      matched_ids: []
+    }));
+  }
+  
+  // Normalizace FUSED_GPS dat
+  normalizeFusedData(fusedData) {
+    return fusedData.map(item => ({
+      point: turf.point([item.lng, item.lat]),
+      time: this.parseTimeString(item.timeStr),
+      lat: item.lat,
+      lng: item.lng,
+      source: 'offline',
+      raw_ids: item.raw_ids || [],
+      crossMode: item.crossMode || { active: false },
+      matched_ids: item.matched_ids || [],
+      speed_mps: item.speed_mps || 0,
+      dist_to_m: item.dist_to_m || null,
+      mesh_id: item.mesh_id || null
+    }));
+  }
+  
+  // Bezpečná konverze HH:MM:SS na Date
+  parseTimeString(timeStr) {
+    if (!timeStr) return new Date();
+    
+    // Pokud je to už Date objekt
+    if (timeStr instanceof Date) return timeStr;
+    
+    // Pokud je to ISO string
+    if (timeStr.includes('T') || timeStr.includes('-')) {
+      return new Date(timeStr);
+    }
+    
+    // Pokud je to HH:MM:SS
+    if (timeStr.match(/^\d{1,2}:\d{2}:\d{2}$/)) {
+      const [hours, minutes, seconds] = timeStr.split(':').map(Number);
+      const date = new Date();
+      date.setHours(hours, minutes, seconds, 0);
+      return date;
+    }
+    
+    // Fallback
+    return new Date(timeStr);
+  }
+  
+  // Zpracování OFFLINE dat přes FUSED_GPS
+  processOfflineData(offlineData) {
+    console.log('🔄 [DATA-MANAGER] Zpracovávám OFFLINE data přes FUSED_GPS...');
+    
+    // Nastavit BASIC_TABLE pro FUSED_GPS
+    window.BASIC_TABLE_04062025 = offlineData;
+    
+    // Spustit FUSED_GPS zpracování
+    if (window.FUSED_GPS && window.FUSED_GPS.runOfflineGNSS) {
+      window.FUSED_GPS.runOfflineGNSS();
+    } else {
+      console.error('❌ [DATA-MANAGER] FUSED_GPS není dostupný');
+    }
+  }
+  
+  // Aktualizace aktuálních dat podle režimu
+  updateCurrentData() {
+    switch (this.animationMode) {
+      case 'single':
+        // Použít aktivní zdroj
+        if (this.dataSources.fused) {
+          this.currentData = this.offlineData;
+        } else if (this.dataSources.gnss) {
+          this.currentData = this.gnssData;
+        }
+        break;
+        
+      case 'both':
+        // Kombinace obou zdrojů
+        this.currentData = this.mergeDataSources();
+        break;
+        
+      case 'comparison':
+        // Porovnávací režim - střídání mezi zdroji
+        this.currentData = this.createComparisonData();
+        break;
+    }
+    
+    console.log(`📊 [DATA-MANAGER] Aktuální data: ${this.currentData.length} záznamů (${this.animationMode})`);
+  }
+  
+  // Sloučení datových zdrojů pro režim "Obě"
+  mergeDataSources() {
+    const merged = [];
+    const gnssData = this.gnssData || [];
+    const offlineData = this.offlineData || [];
+    
+    // Najít časové překryvy a sloučit
+    for (const gnssItem of gnssData) {
+      const offlineItem = this.findClosestByTime(gnssItem.time, offlineData);
+      
+      merged.push({
+        ...gnssItem,
+        offline: offlineItem,
+        hasOffline: !!offlineItem,
+        hasGnss: true
+      });
+    }
+    
+    // Přidat offline data bez GNSS protějšku
+    for (const offlineItem of offlineData) {
+      const hasGnss = merged.some(item => 
+        Math.abs(item.time.getTime() - offlineItem.time.getTime()) < 1000
+      );
+      
+      if (!hasGnss) {
+        merged.push({
+          ...offlineItem,
+          gnss: null,
+          hasOffline: true,
+          hasGnss: false
+        });
+      }
+    }
+    
+    // Seřadit podle času
+    return merged.sort((a, b) => a.time.getTime() - b.time.getTime());
+  }
+  
+  // Vytvoření porovnávacích dat
+  createComparisonData() {
+    const comparison = [];
+    const gnssData = this.gnssData || [];
+    const offlineData = this.offlineData || [];
+    
+    // Střídavě přidávat GNSS a OFFLINE data
+    const maxLength = Math.max(gnssData.length, offlineData.length);
+    
+    for (let i = 0; i < maxLength; i++) {
+      if (i < gnssData.length) {
+        comparison.push({
+          ...gnssData[i],
+          comparisonType: 'gnss'
+        });
+      }
+      
+      if (i < offlineData.length) {
+        comparison.push({
+          ...offlineData[i],
+          comparisonType: 'offline'
+        });
+      }
+    }
+    
+    return comparison;
+  }
+  
+  // Najít nejbližší záznam podle času
+  findClosestByTime(targetTime, dataArray, tolerance = 5000) { // Zvýšeno na 5s pro GNSS vs OFFLINE
+    let closest = null;
+    let minDiff = Infinity;
+    
+    for (const item of dataArray) {
+      const diff = Math.abs(targetTime.getTime() - item.time.getTime());
+      if (diff < tolerance && diff < minDiff) {
+        minDiff = diff;
+        closest = item;
+      }
+    }
+    
+    return closest;
+  }
+  
+  // Nastavení režimu animace
+  setAnimationMode(mode) {
+    this.animationMode = mode;
+    this.updateCurrentData();
+    console.log(`🎬 [DATA-MANAGER] Režim animace nastaven na: ${mode}`);
+  }
+  
+  // Získání aktuálních dat
+  getCurrentData() {
+    return this.currentData;
+  }
+  
+  // Získání informací o zdrojích
+  getDataSourceInfo() {
+    return {
+      gnss: {
+        available: !!this.dataSources.gnss,
+        count: this.gnssData.length
+      },
+      offline: {
+        available: !!this.dataSources.offline,
+        count: this.offlineData.length
+      },
+      fused: {
+        available: !!this.dataSources.fused,
+        count: this.offlineData.length
+      },
+      current: {
+        mode: this.animationMode,
+        count: this.currentData.length
+      }
+    };
+  }
+}
+
+// Globální instance
+window.universalDataManager = new UniversalDataManager();
+
 // --- Animace podle RENDERERDATA1.js ---
 let data = [];
+let dataManager = window.universalDataManager;
 
+// Hook pro FUSED_GPS data
+window.applyFusedGpsDataset = function(fusedData) {
+  console.log("✅ [RENDERER] Přijat fused dataset:", fusedData.length, "záznamů");
+  dataManager.setDataSource(fusedData, 'fused');
+  data = dataManager.getCurrentData();
+  idx = 0; // reset indexu
+};
+
+// Hook pro GNSS data
+window.applyGnssDataset = function(gnssData) {
+  console.log("✅ [RENDERER] Přijat GNSS dataset:", gnssData.length, "záznamů");
+  dataManager.setDataSource(gnssData, 'gnss');
+  data = dataManager.getCurrentData();
+  idx = 0; // reset indexu
+};
+
+// Event listener pro FUSED_GPS_READY (fallback)
+window.addEventListener('FUSED_GPS_READY', (event) => {
+  const fusedData = event.detail.fused;
+  const mode = event.detail.mode || 'single';
+  console.log("✅ [RENDERER] Přijat FUSED_GPS_READY event:", fusedData.length, "záznamů, mode:", mode);
+  dataManager.setDataSource(fusedData, 'fused');
+  data = dataManager.getCurrentData();
+  idx = 0; // reset indexu
+});
+
+// Fallback pro RENDERERDATA1
 try {
-  if (!Array.isArray(RENDERERDATA1)) throw new Error("RENDERERDATA1 není pole.");
-
-  data = RENDERERDATA1
-    .filter(d =>
-      d &&
-      typeof d.lat === 'number' &&
-      typeof d.lng === 'number' &&
-      typeof d.timestamp === 'string'
-    )
-    .map(d => ({
-      point: turf.point([d.lng, d.lat]),
-      time: new Date(d.timestamp),
-      lat: d.lat,
-      lng: d.lng
-    }));
-
-  console.log("✅ Načteno datových bodů:", data.length);
-  console.log("🔹 První bod:", data[0]);
-
+  if (typeof RENDERERDATA1 !== 'undefined' && Array.isArray(RENDERERDATA1)) {
+    dataManager.setDataSource(RENDERERDATA1, 'gnss');
+    data = dataManager.getCurrentData();
+    console.log("✅ Načteno datových bodů:", data.length);
+    console.log("🔹 První bod:", data[0]);
+  } else {
+    console.warn("⚠️ RENDERERDATA1 není dostupný, čekám na data...");
+  }
 } catch (err) {
   console.error("❌ CHYBA při načítání dat:", err.message);
 }
@@ -254,11 +554,16 @@ try {
 
 let idx = 0;
 document.addEventListener('DOMContentLoaded', () => {
+  // Aktualizovat data z dataManageru
+  data = dataManager.getCurrentData();
   console.log('Počet datových bodů:', data.length);
   if (data.length > 0) console.log('První bod:', data[0]);
   let lastPan = 0;
   timer = setInterval(() => {
   if (playbackSpeed === 0) return;
+
+  // Aktualizovat data z dataManageru před každým cyklem
+  data = dataManager.getCurrentData();
 
   for (let i = 0; i < Math.abs(playbackSpeed); i++) {
     idx += playbackSpeed > 0 ? 1 : -1;
@@ -323,16 +628,23 @@ if (prev) {
       }
     }
 
+    // Získat informace o datovém zdroji
+    const dataSourceInfo = dataManager.getDataSourceInfo();
+    const sourceInfo = rec.source ? ` (${rec.source})` : '';
+    
     marker.setPopupContent(`
       <div style="font-size:12px; min-width:220px">
         <b style="color:${inRed ? '#dc3545' : inGreen ? '#28a745' : '#6c757d'}">
           ${inRed ? 'INCIDENT v zakázané zóně' : inGreen ? 'V povolené zóně' : 'Mezi zónami'}
         </b><hr style="margin:5px 0">
-        <b>Čas:</b> ${rec.time.toLocaleTimeString()}<br>
+        <b>Čas:</b> ${rec.time.toLocaleTimeString()}${sourceInfo}<br>
         <b>Souřadnice:</b> ${rec.lat.toFixed(6)}, ${rec.lng.toFixed(6)}<br>
         <b>ID:</b> ${SUBJECT_ID}<br>
         <b>Typ pohybu:</b> ${motionType}<br>
-        <b>Vzdál. k zóně:</b> ${dist} m${crossModeStatus}
+        <b>Vzdál. k zóně:</b> ${dist} m<br>
+        <b>RAW IDs:</b> [${rec.raw_ids && rec.raw_ids.length > 0 ? rec.raw_ids.join(", ") : "none"}]<br>
+        <b>Matched IDs:</b> [${rec.matched_ids && rec.matched_ids.length > 0 ? rec.matched_ids.join(", ") : "none"}]<br>
+        <b>Režim:</b> ${dataSourceInfo.current.mode} (${dataSourceInfo.current.count} záznamů)${crossModeStatus}
       </div>
     `).openPopup();
 

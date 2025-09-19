@@ -2,9 +2,9 @@ import pandas as pd
 from pathlib import Path
 
 # ----- VSTUP / VÝSTUP -----
-INPUT_XLSX = r"C:\Users\mspan\Desktop\BASIC_TABLE.xlsx"
-OUTPUT_JS  = r"C:\Users\mspan\Desktop\demo_zony_app1\adminlte\dist\BASIC_TABLE_04062025.js"
-CONST_NAME = "BASIC_TABLE_04062025"
+INPUT_XLSX = r"C:\Users\mspan\Desktop\22072025\BASIC_TABLE_22072025.xlsx"
+OUTPUT_JS  = r"C:\Users\mspan\Desktop\demo_zony_app1\adminlte\dist\BASIC_TABLE_22072025.js"
+CONST_NAME = "BASIC_TABLE_22072025"
 
 # ----- ČTENÍ -----
 df = pd.read_excel(INPUT_XLSX, dtype=str)  # čteme jako text, typy převedeme sami

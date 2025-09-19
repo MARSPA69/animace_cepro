@@ -415,86 +415,6 @@ function footprintForId(mid, footSrc) {
     }
   }
 
-  // Find target polygon edge center based on crossing decision
-  function findTargetPolygonEdge(decision, lat, lng) {
-    // Get polygon for the target segment
-    let polygon = null;
-    switch(decision) {
-      case 'A': polygon = window.segA_poly; break;
-      case 'B': polygon = window.segB_poly; break;
-      case 'F': polygon = window.segF_poly; break;
-      case 'G': polygon = window.segG_poly; break;
-      default: return null;
-    }
-    
-    if (!polygon || !polygon.coordinates || !polygon.coordinates[0]) return null;
-    
-    const coords = polygon.coordinates[0]; // First ring of polygon
-    let closestEdge = null;
-    let minDist = Infinity;
-    let closestEdgeCenter = null;
-    
-    // Find closest edge of polygon
-    for (let i = 0; i < coords.length - 1; i++) {
-      const p1 = coords[i];
-      const p2 = coords[i + 1];
-      
-      // Calculate edge center
-      const edgeCenterLat = (p1[1] + p2[1]) / 2;
-      const edgeCenterLng = (p1[0] + p2[0]) / 2;
-      
-      // Calculate distance from current position to edge center
-      const dist = haversine_m(lat, lng, edgeCenterLat, edgeCenterLng);
-      
-      if (dist < minDist) {
-        minDist = dist;
-        closestEdge = { p1, p2 };
-        closestEdgeCenter = { lat: edgeCenterLat, lng: edgeCenterLng };
-      }
-    }
-    
-    console.log(`🎯 [TARGET-EDGE] Segment ${decision}, closest edge center: lat=${closestEdgeCenter.lat.toFixed(6)}, lng=${closestEdgeCenter.lng.toFixed(6)}`);
-    
-    return closestEdgeCenter;
-  }
-
-  // NOVÁ FUNKCE: Najdi vstupní bod pro segment A
-  function findSegmentAEntryPoint(currentLat, currentLng) {
-    const segA_coords = [
-      [15.0747774879861,50.0439940454987],  // Roh 1
-      [15.073886377953,50.0442231354994],   // Roh 2  
-      [15.073900282052,50.0442579645001],   // Roh 3
-      [15.0747913920189,50.0440288745009]   // Roh 4
-    ];
-    
-    // Najdi dva nejbližší rohy k aktuální pozici
-    let minDist1 = Infinity, minDist2 = Infinity;
-    let closest1 = null, closest2 = null;
-    
-    for (let i = 0; i < segA_coords.length; i++) {
-      const dist = haversine_m(currentLat, currentLng, segA_coords[i][1], segA_coords[i][0]);
-      if (dist < minDist1) {
-        minDist2 = minDist1;
-        closest2 = closest1;
-        minDist1 = dist;
-        closest1 = i;
-      } else if (dist < minDist2) {
-        minDist2 = dist;
-        closest2 = i;
-      }
-    }
-    
-    // Vypočti střed spojnice dvou nejbližších rohů
-    const roh1 = segA_coords[closest1];
-    const roh2 = segA_coords[closest2];
-    const midLat = (roh1[1] + roh2[1]) / 2;
-    const midLng = (roh1[0] + roh2[0]) / 2;
-    
-    console.log(`🎯 [SEGMENT-A-ENTRY] Closest corners: ${closest1+1}, ${closest2+1}, entry point: lat=${midLat.toFixed(6)}, lng=${midLng.toFixed(6)}`);
-    
-    return { lat: midLat, lng: midLng };
-  }
-
   // ---------- Main calculation function ----------
 function buildFusedSeries() {
   console.log("🚀 [BUILD-START] buildFusedSeries called");
@@ -543,14 +463,7 @@ function buildFusedSeries() {
   const rows = dedupRows(rowsRaw).map(r => {
     const ts  = getRowTimestamp(r);
     const sec = parseHmsToSec(ts);
-    const a_ids = readAnchors(r);
-    
-    // DEBUG: Logování BASIC_TABLE kotev
-    if (a_ids && a_ids.length > 0) {
-      console.log(`🔍 [BASIC-TABLE] ts=${ts}, a_ids=[${a_ids.join(',')}]`);
-    }
-    
-    return { ts, sec, speed: getRowSpeed(r), a_ids };
+    return { ts, sec, speed: getRowSpeed(r), a_ids: readAnchors(r) };
   }).filter(x => x.sec != null).sort((a,b)=>a.sec-b.sec);
 
   if (!rows.length) return [];
@@ -627,12 +540,6 @@ for (let i = 0; i < rows.length; i++) {
     const fp    = footprintForId(near.m.id, FOOT_SRC) || [];
     const setFP = new Set(fp.map(Number).filter(Number.isFinite));
     const matched = rawIds.map(Number).filter(n => setFP.has(n));
-    
-    // DEBUG: Logování MESH Footprint
-    if (fp.length > 0) {
-      console.log(`🔍 [MESH-FOOTPRINT] mesh_id=${near.m.id}, footprint=[${fp.join(',')}], matched=[${matched.join(',')}]`);
-    }
-    
     hit = {
       mesh_id: near.m.id,
       matched_ids: matched,
@@ -655,73 +562,39 @@ for (let i = 0; i < rows.length; i++) {
         // snapni marker na střed křižovatky při čekání
         latFinal = cross.lat;
         lngFinal = cross.lng;
-        console.log(`🚦 [CROSS-ACTIVATE] CROSS MODE aktivován: ${cross.name}, vzdálenost=${d.toFixed(1)}m, ts=${baseRow.ts}`);
         break;
       }
     }
   } else {
-    // jsme v CROSS MODE → rozhodování POUZE podle BASIC_TABLE kotev (±15 s kolem s)
+    // jsme v CROSS MODE → rozhodování jen podle recentních řádků (±15 s kolem s)
     const timeWindow = 15;
     const startWin   = s - timeWindow;
     const endWin     = s + timeWindow;
 
-    let seenA = false, seenF = false, seenB = false, seen13Later = false;
+    let seenA = false, seenF = false, seen13Later = false;
 
-    // Hledáme pouze BASIC_TABLE kotvy (a_ids) - NE MATCHED kotvy
-    let basicTableAnchorsFound = [];
-    let matchedAnchorsFound = [];
-    
     for (let j = 0; j < rows.length; j++) {
       const rj = rows[j];
       if (rj.sec < startWin) continue;
       if (rj.sec > endWin)   break;
-      
-      // Pouze BASIC_TABLE kotvy pro rozhodování
-      const basicTableAnchors = rj.a_ids || [];
-      basicTableAnchorsFound.push(...basicTableAnchors);
-      
-      // DEBUG: Porovnání BASIC_TABLE vs MATCHED kotvy
-      if (basicTableAnchors.length > 0) {
-        console.log(`🔍 [CROSS-DEBUG] ts=${rj.ts}, BASIC_TABLE=[${basicTableAnchors.join(',')}]`);
-      }
-      
-      // A = 11/12/13, F = 37/38/45, B = 15
-      if (basicTableAnchors.some(id => id === 11 || id === 12 || id === 13)) seenA = true;
-      if (basicTableAnchors.some(id => id === 37 || id === 38 || id === 45)) seenF = true;
-      if (basicTableAnchors.some(id => id === 15)) seenB = true;
+      // A = 11/12/13, F = 37/38/45
+      if (rj.a_ids?.some(id => id === 11 || id === 12 || id === 13)) seenA = true;
+      if (rj.a_ids?.some(id => id === 37 || id === 38 || id === 45)) seenF = true;
     }
-    
-    // DEBUG: Shrnutí nalezených kotev
-    const uniqueBasicTable = [...new Set(basicTableAnchorsFound)];
-    console.log(`🔍 [CROSS-DEBUG] Časové okno ±${timeWindow}s: BASIC_TABLE kotvy=[${uniqueBasicTable.join(',')}]`);
-    console.log(`🔍 [CROSS-DEBUG] Rozhodování: seenA=${seenA}, seenB=${seenB}, seenF=${seenF}, seen13Later=${seen13Later}`);
-    
-    // predikce 13 vpřed (do +25 s) - pouze BASIC_TABLE kotvy
+    // predikce 13 vpřed (do +25 s)
     for (let j = i; j < rows.length && rows[j].sec <= s + 25; j++) {
-      const basicTableAnchors = rows[j].a_ids || [];
-      if (basicTableAnchors.includes(13)) { 
-        seen13Later = true; 
-        console.log(`🔍 [CROSS-DEBUG] Predikce: kotva 13 nalezena v ts=${rows[j].ts} (vpřed +${rows[j].sec - s}s)`);
-        break; 
-      }
+      if (rows[j].a_ids?.includes(13)) { seen13Later = true; break; }
     }
 
     let decision = null;
     if (seen13Later || seenA) {
       decision = "A";
-      console.log(`🔍 [CROSS-DECISION] Rozhodnutí A: seen13Later=${seen13Later}, seenA=${seenA}`);
-    } else if (seenB) {
-      decision = "B";
-      console.log(`🔍 [CROSS-DECISION] Rozhodnutí B: seenB=${seenB}`);
     } else if (seenF) {
       // čekáme max 30 s, pak fallback F
       const waited = crossMode.startTime ? (s - crossMode.startTime) : 0;
       decision = (waited >= 30) ? "F" : null;
-      console.log(`🔍 [CROSS-DECISION] Rozhodnutí F: seenF=${seenF}, waited=${waited}s, timeout=${waited >= 30}`);
     } else {
       decision = null;
-      const waited = crossMode.startTime ? (s - crossMode.startTime) : 0;
-      console.log(`🔍 [CROSS-DECISION] Žádné rozhodnutí: waited=${waited}s, čekání na kotvy`);
     }
 
     if (decision === "A") {
@@ -730,38 +603,21 @@ for (let i = 0; i < rows.length; i++) {
       latFinal = entry.lat; lngFinal = entry.lng;
       crossMode.active = false; crossMode.decision = "A"; crossMode.crossing = null;
       window.FUSED_GPS.crossMode = crossMode;
-      console.log(`🎯 [CROSS-DECISION] Rozhodnutí A - kotvy 11/12/13 nalezeny v BASIC_TABLE, ts=${baseRow.ts}`);
-    } else if (decision === "B") {
-      const edge = findTargetPolygonEdge(decision, latFinal, lngFinal);
-      if (edge) {
-        latFinal = edge.lat; lngFinal = edge.lng;
-        crossMode.active = false; crossMode.decision = "B"; crossMode.crossing = null;
-        window.FUSED_GPS.crossMode = crossMode;
-        console.log(`🎯 [CROSS-DECISION] Rozhodnutí B - kotva 15 nalezena v BASIC_TABLE, ts=${baseRow.ts}`);
-      }
     } else if (decision === "F") {
       const edge = findTargetPolygonEdge(decision, latFinal, lngFinal);
       if (edge) {
         latFinal = edge.lat; lngFinal = edge.lng;
         crossMode.active = false; crossMode.decision = "F"; crossMode.crossing = null;
         window.FUSED_GPS.crossMode = crossMode;
-        console.log(`🎯 [CROSS-DECISION] Rozhodnutí F - kotvy 37/38/45 nalezeny v BASIC_TABLE nebo timeout, ts=${baseRow.ts}`);
       }
     } else {
       // waiting → držíme střed křižovatky
       latFinal = crossMode.crossing.lat;
       lngFinal = crossMode.crossing.lng;
-      console.log(`⏳ [CROSS-WAIT] Čekání na BASIC_TABLE kotvy - žádné rozhodnutí zatím, ts=${baseRow.ts}`);
     }
   }
 
-  // 7) záznam jednoho "řádkového" rec
-  
-  // DEBUG: Logování RAW IDs pro každý řádek
-  if (rawIds && rawIds.length > 0) {
-    console.log(`🔍 [RAW-IDS] ts=${baseRow.ts}, rawIds=[${rawIds.join(',')}]`);
-  }
-  
+  // 7) záznam jednoho “řádkového” rec
   const rec = {
     sec: s,
     timeStr: baseRow.ts,
@@ -785,11 +641,6 @@ for (let i = 0; i < rows.length; i++) {
   if (i < 5) {
     console.log(`[ROW-START ${i}] ts=${rec.timeStr}, raw_ids=[${rawIds.join(", ")}]`);
   }
-  
-  // DEBUG: Logování každých 100 řádků pro sledování průběhu
-  if (i % 100 === 0) {
-    console.log(`🔧 [FUSED-GPS-PROGRESS] Processing row ${i}/${rows.length}, ts=${rec.timeStr}, raw_ids=[${rawIds.join(", ")}]`);
-  }
 
   perSecond.push(rec);
   out.push(rec);          // vizualizuj každý řádek BASIC_TABLE
@@ -799,9 +650,6 @@ for (let i = 0; i < rows.length; i++) {
 
 // export pro renderer/uložení
 window.fusedLog = { per_second: perSecond, viz_rows: out };
-console.log(`✅ [FUSED-GPS-COMPLETE] buildFusedSeries dokončeno: ${out.length} záznamů`);
-console.log(`🔧 [FUSED-GPS-COMPLETE] První 3 záznamy:`, out.slice(0, 3));
-console.log(`🔧 [FUSED-GPS-COMPLETE] Poslední 3 záznamy:`, out.slice(-3));
 return out;
 
 }
@@ -864,23 +712,17 @@ function extractAnchorIds(row) {
 
   // ---------- Integration with renderer ----------
   // Main entry point for running the GPS fusion algorithm
-  function runOfflineGNSS(mode = 'single') {
-    console.log("🚀 [RUN-OFFLINE] runOfflineGNSS called with mode:", mode);
+  function runOfflineGNSS() {
+    console.log("🚀 [RUN-OFFLINE] runOfflineGNSS called");
     const fused = buildFusedSeries();
     if (!Array.isArray(fused) || !fused.length) {
       alert("FUSED_GPS: Output is empty (check input datasets).");
       return;
     }
-    
-    // Nastavit režim v data manageru
-    if (window.universalDataManager) {
-      window.universalDataManager.setAnimationMode(mode);
-    }
-    
     if (typeof window.applyFusedGpsDataset === "function") {
       window.applyFusedGpsDataset(fused);
     } else {
-      const ev = new CustomEvent("FUSED_GPS_READY", { detail: { fused, mode } });
+      const ev = new CustomEvent("FUSED_GPS_READY", { detail: { fused } });
       window.dispatchEvent(ev);
     }
    }   
@@ -936,35 +778,7 @@ window.FUSED_GPS = {
   },
 
   // Utility functions for external use
-  _util: { haversine_m, bearing_deg, destinationPoint },
-  
-  // Rozšířené API pro podporu režimů
-  setAnimationMode(mode) {
-    if (window.universalDataManager) {
-      window.universalDataManager.setAnimationMode(mode);
-    }
-  },
-  
-  getDataSourceInfo() {
-    if (window.universalDataManager) {
-      return window.universalDataManager.getDataSourceInfo();
-    }
-    return null;
-  },
-  
-  // Metoda pro nastavení GNSS dat
-  setGnssData(gnssData) {
-    if (window.universalDataManager) {
-      window.universalDataManager.setDataSource(gnssData, 'gnss');
-    }
-  },
-  
-  // Metoda pro nastavení OFFLINE dat
-  setOfflineData(offlineData) {
-    if (window.universalDataManager) {
-      window.universalDataManager.setDataSource(offlineData, 'offline');
-    }
-  }
+  _util: { haversine_m, bearing_deg, destinationPoint }
 };
 
 // Configuration access and modification functions
