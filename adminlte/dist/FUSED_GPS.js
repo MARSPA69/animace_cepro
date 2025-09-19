@@ -165,30 +165,31 @@ function getRowTimestamp(r) {
 
   // Extract anchor IDs from table row, trying various field name patterns
   function readAnchors(row) {
-    // DEBUG: Logování vstupu do readAnchors - OPRAVA: kontroluj všechny ANCHOR pole, i když jsou 0
-    if (row.TIME && (row.ANCHOR1 !== undefined || row.ANCHOR2 !== undefined || row.ANCHOR3 !== undefined || row.ANCHOR4 !== undefined || row.ANCHOR5 !== undefined || row.ANCHOR6 !== undefined)) {
-      console.log(`🔍 [READ-ANCHORS] Input ts=${row.TIME}, ANCHOR1=${row.ANCHOR1}, ANCHOR2=${row.ANCHOR2}, ANCHOR3=${row.ANCHOR3}, ANCHOR4=${row.ANCHOR4}, ANCHOR5=${row.ANCHOR5}, ANCHOR6=${row.ANCHOR6}`);
-    }
-    
+    // 1) Posbírej všechna pole ANCHORx / KOTVAx (čísla i řetězce)
+    const num = v => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : NaN;
+    };
+
+    const keysA = Object.keys(row).filter(k => /^ANCHOR\d+$/i.test(k));
+    const keysK = Object.keys(row).filter(k => /^KOTVA\d+$/i.test(k));
+    const keys  = keysA.length ? keysA : keysK;
+
+    let ids = [];
     if (Array.isArray(row.Footprints)) {
-      const result = uniq(row.Footprints.map(Number).filter(n => Number.isFinite(n) && n > 0));
-      console.log(`🔍 [READ-ANCHORS] Footprints result:`, result);
-      return result;
+      ids = row.Footprints.map(num);
+    } else if (keys.length) {
+      ids = keys.map(k => num(row[k]));
     }
-    let keys = Object.keys(row).filter(k => /^KOTVA\d+$/i.test(k));
-    if (keys.length) {
-      const result = uniq(keys.map(k => Number(row[k])).filter(n => Number.isFinite(n) && n > 0));
-      console.log(`🔍 [READ-ANCHORS] KOTVA result:`, result);
-      return result;
-    }
-    keys = Object.keys(row).filter(k => /^ANCHOR\d+$/i.test(k));
-    if (keys.length) {
-      const result = uniq(keys.map(k => Number(row[k])).filter(n => Number.isFinite(n) && n > 0));
-      console.log(`🔍 [READ-ANCHORS] ANCHOR result:`, result);
-      return result;
-    }
-    console.log(`🔍 [READ-ANCHORS] No anchors found, returning []`);
-    return [];
+
+    // 2) Filtrovat na >0, odstranit duplicitní
+    const set = new Set(ids.filter(n => Number.isFinite(n) && n > 0));
+    const out = Array.from(set);
+
+    // 3) Krátký debug – ale vždy, ne jen když jsou nenulové
+    console.log(`🔎 [READ-ANCHORS/ROW] ts=${row.TIME ?? row.ts ?? "?"} raw=[${[row.ANCHOR1,row.ANCHOR2,row.ANCHOR3,row.ANCHOR4,row.ANCHOR5,row.ANCHOR6].map(v=>v??"–").join(",")}] → ids=[${out.join(",")}]`);
+
+    return out;
   }
 
   // ---------- Anchor ID matching (informational) ----------
@@ -564,12 +565,25 @@ function buildFusedSeries() {
     return { ts, sec, speed: getRowSpeed(r), a_ids };
   });
   
+  // DEBUG: Logování časového rozsahu
+  if (tmp.length > 0) {
+    const firstTime = tmp[0].ts;
+    const lastTime = tmp[tmp.length - 1].ts;
+    console.log(`🔍 [TIME-RANGE] První čas: ${firstTime}, Poslední čas: ${lastTime}, Celkem řádků: ${tmp.length}`);
+  }
+  
   const rows = tmp.filter(x => x.sec != null).sort((a,b)=>a.sec-b.sec);
 
-  // DEBUG: Kontrola rows array
-  console.log(`🔍 [ROWS-DEBUG] rows.length=${rows.length}`);
-  console.log(`🔍 [ROWS-DEBUG] První 5 řádků:`, rows.slice(0, 5));
-  console.log(`🔍 [ROWS-DEBUG] Poslední 5 řádků:`, rows.slice(-5));
+  // --- ROW ORDER SANITY CHECK (jen jednou) ---
+  const RUN = Date.now().toString(36).slice(-5);
+  console.log(`🧭 [FUSED/RUN=${RUN}] rows.length=${rows.length}`);
+  console.log(`🧭 [FUSED/RUN=${RUN}] FIRST 5:`, rows.slice(0,5).map(r=>r.ts).join(" | "));
+  console.log(`🧭 [FUSED/RUN=${RUN}] LAST  5:`, rows.slice(-5).map(r=>r.ts).join(" | "));
+
+  // Očekávaný start = první řádek BASIC_TABLE
+  if (!rows.length || rows[0].ts !== (rowsRaw[0]?.TIME || rows[0].ts)) {
+    console.warn(`⚠️ [FUSED/RUN=${RUN}] first row ts mismatch: rows[0].ts=${rows[0]?.ts}, raw[0].TIME=${rowsRaw[0]?.TIME}`);
+  }
 
   if (!rows.length) return [];
 
@@ -780,9 +794,14 @@ for (let i = 0; i < rows.length; i++) {
 
   // 7) záznam jednoho "řádkového" rec
   
-  // DEBUG: Logování RAW IDs pro každý řádek
-  if (rawIds && rawIds.length > 0) {
-    console.log(`🔍 [RAW-IDS] ts=${baseRow.ts}, rawIds=[${rawIds.join(',')}]`);
+       // --- ROW DEBUG: kotvy a match pro tento řádek --- 
+       if (i < 10 || baseRow.ts <= "07:00:00") {
+         console.log(`🧩 [ROW/RUN=${RUN}] i=${i} ts=${baseRow.ts} raw=[${rawIds.join(",")}] mesh=${hit?.mesh_id ?? "-"} fp=[${(hit?.footprint||[]).join(",")}] matched=[${(hit?.matched_ids||[]).join(",")}]`);
+       }
+  
+  // DEBUG: Logování časového mapování
+  if (i < 10 || i % 100 === 0) {
+    console.log(`🔍 [TIME-MAP] i=${i}, baseRow.ts=${baseRow.ts}, baseRow.sec=${baseRow.sec}, s=${s}`);
   }
   
   const rec = {

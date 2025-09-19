@@ -1896,7 +1896,19 @@ window.applyFusedGpsDataset = function (fused) {
     return;
   }
 
-  console.log(`✅ FUSED_GPS dataset nahrán: ${fused.length} záznamů`);
+  // Normalizace pro renderer
+  window.realData = fused.map(r => ({
+    ...r,
+    point: (typeof turf !== "undefined") ? turf.point([r.lng, r.lat]) : { type: "Point", coordinates: [r.lng, r.lat] },
+    timestamp: r.timeStr || r.timestamp || "00:00:00",
+    time: (typeof r.time === "number") ? r.time : (function hhmmssToMs(t){
+      const m = String(t||"").match(/^(\d{2}):(\d{2}):(\d{2})$/); 
+      if (!m) return 0;
+      return (+m[1])*3600000 + (+m[2])*60000 + (+m[3])*1000;
+    })(r.timeStr || r.timestamp)
+  }));
+
+  console.log(`✅ [RENDERER] Přijat fused dataset: ${window.realData.length} záznamů (first=${window.realData[0]?.timeStr}, last=${window.realData.at(-1)?.timeStr})`);
 
   // uložíme globálně
   window.fusedData = fused;
@@ -1905,25 +1917,9 @@ window.applyFusedGpsDataset = function (fused) {
   const mode = document.getElementById('channelSelect')?.value || 'offlinegnss';
 
   if (mode === 'offlinegnss') {
-    // SINGLE – čistě fused data
-    window.realData = fused.map(r => ({
-      lat: r.lat, lng: r.lng,
-      timestamp: r.timestamp || r.timeStr || "00:00:00",
-      time: (typeof r.time === 'number') ? r.time : (r.sec ? r.sec * 1000 : null),
-      timeStr: r.timeStr || r.timestamp || "00:00:00",
-      speed_mps: r.speed_mps ?? null,
-      dist_to_m: r.dist_to_m ?? null,
-      mesh_id: r.mesh_id ?? null,
-      matched_count: r.matched_count ?? 0,
-      matched_ids: Array.isArray(r.matched_ids) ? r.matched_ids : [],
-      crossMode: r.crossMode || { active: false, crossing: null, decision: null }
-    }));
-
-    if (window.timer) { clearTimeout(window.timer); window.timer = null; }
+    // start
     idx = 0;
-    animationActive = false;
-
-    console.log(`▶️ startAnimation s ${window.realData.length} fused záznamy (SINGLE)`);
+    animationData = window.realData.slice(); // (pokud ještě někde voláš makeAnimSeries, nechej si i to – ale tady už máš jistotu)
     startAnimation();
     return;
   }
