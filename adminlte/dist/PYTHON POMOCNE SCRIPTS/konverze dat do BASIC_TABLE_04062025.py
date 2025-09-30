@@ -2,8 +2,8 @@ import pandas as pd
 from pathlib import Path
 
 # ----- VSTUP / VÝSTUP -----
-INPUT_XLSX = r"C:\Users\mspan\Desktop\22072025\BASIC_TABLE_22072025.xlsx"
-OUTPUT_JS  = r"C:\Users\mspan\Desktop\demo_zony_app1\adminlte\dist\BASIC_TABLE_22072025.js"
+INPUT_XLSX = r"C:\Users\mspan\Desktop\ČEPRO DATA\30042025\CEPRO_30042025\BASIC_TABLE_30042025.xlsx"
+OUTPUT_JS  = r"C:\Users\mspan\Desktop\demo_zony_app1\adminlte\dist\BASIC_TABLE_30042025.js"
 CONST_NAME = "BASIC_TABLE_22072025"
 
 # ----- ČTENÍ -----

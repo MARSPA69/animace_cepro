@@ -3,8 +3,8 @@ import json
 from datetime import datetime, time
 
 # Cesty k souborům
-input_excel = r"C:\Users\mspan\Desktop\22072025\GNSS_22072025.xlsx"
-output_js = r"C:\Users\mspan\Desktop\demo_zony_app1\adminlte\dist\GNSS_22072025.js"
+input_excel = r"C:\Users\mspan\Desktop\ČEPRO DATA\10042025\CEPRO 10042025\GNSS_10042025.xlsx"
+output_js = r"C:\Users\mspan\Desktop\demo_zony_app1\adminlte\dist\GNSS_10042025.js"
 
 # Načtení Excel souboru
 df = pd.read_excel(input_excel)

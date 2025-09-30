@@ -34,20 +34,588 @@ let fgpsIdx = 0;   // index F_GPS pro BOTH
 let gnssIdx = 0;   // index GNSS pro BOTH
 let ANCHOR_TO_SEG = null;
 let incidentCounter = 0;
+let currentRendererData = null; // aktivní dataset
+let ballInfoPanel = null;
 
 
-// --- Listener fallback ---
-window.addEventListener("FUSED_GPS_READY", e => {
+// --- Parallel Tracking globály ---
+window.parallelTracks = {};          // { dsName: { dataset, idx, marker, color } }
+window.parallelInstances = [];       // běžící instance (marker+panel)
+window.parallelMode = false;         // přepínač režimu
+
+function attachBallInfoPanelBehaviors(panel) {
+  if (!panel) return;
+
+  const minimizeBtn  = panel.querySelector('#minimize-btn');
+  const closeBtn     = panel.querySelector('#close-btn');
+  const panelHeader  = panel.querySelector('.panel-header');
+  const panelContent = panel.querySelector('.panel-content');
+  const resizeHandle = panel.querySelector('.resize-handle');
+
+  let isDragging = false, isResizing = false;
+  let startX, startY, startWidth, startHeight, startLeft, startTop;
+  let isMinimized = false;
+
+  // Minimize
+  minimizeBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    isMinimized = !isMinimized;
+    if (isMinimized) {
+      panelContent.style.display = 'none';
+      panel.style.height = 'auto';
+      minimizeBtn.textContent = '+';
+      minimizeBtn.title = 'Rozbalit';
+    } else {
+      panelContent.style.display = 'block';
+      panel.style.height = '';
+      minimizeBtn.textContent = '−';
+      minimizeBtn.title = 'Minimalizovat';
+    }
+  });
+
+  // Close
+  closeBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    panel.style.display = 'none';
+  });
+
+  // Drag
+  panelHeader?.addEventListener('mousedown', (e) => {
+    if (e.target.closest('.control-btn')) return;
+    isDragging = true;
+    startX = e.clientX;
+    startY = e.clientY;
+    const cs = window.getComputedStyle(panel);
+    startLeft = parseInt(cs.left || '0', 10);
+    startTop  = parseInt(cs.top  || '0', 10);
+
+    document.addEventListener('mousemove', handleDrag);
+    document.addEventListener('mouseup', stopDrag);
+    e.preventDefault();
+  });
+
+  function handleDrag(e) {
+    if (!isDragging) return;
+    const mapWrapper = document.getElementById('map-wrapper');
+    const mapRect    = mapWrapper?.getBoundingClientRect();
+    const panelRect  = panel.getBoundingClientRect();
+
+    let newLeft = startLeft + (e.clientX - startX);
+    let newTop  = startTop  + (e.clientY - startY);
+
+    if (mapRect) {
+      const maxLeft = mapRect.width  - panelRect.width;
+      const maxTop  = mapRect.height - panelRect.height;
+      newLeft = Math.max(0, Math.min(newLeft, maxLeft));
+      newTop  = Math.max(0, Math.min(newTop,  maxTop));
+    }
+
+    panel.style.left = newLeft + 'px';
+    panel.style.top  = newTop  + 'px';
+    panel.style.bottom = 'auto';
+    panel.style.right  = 'auto';
+  }
+
+  function stopDrag() {
+    isDragging = false;
+    document.removeEventListener('mousemove', handleDrag);
+    document.removeEventListener('mouseup', stopDrag);
+  }
+
+  // Resize
+  resizeHandle?.addEventListener('mousedown', (e) => {
+    isResizing = true;
+    startX = e.clientX;
+    startY = e.clientY;
+    const cs = window.getComputedStyle(panel);
+    startWidth  = parseInt(cs.width, 10);
+    startHeight = parseInt(cs.height, 10);
+
+    document.addEventListener('mousemove', handleResize);
+    document.addEventListener('mouseup', stopResize);
+    e.preventDefault();
+    e.stopPropagation();
+  });
+
+  function handleResize(e) {
+    if (!isResizing) return;
+    const newWidth  = Math.max(280, startWidth  + (e.clientX - startX));
+    const newHeight = Math.max(120, startHeight + (e.clientY - startY));
+    panel.style.width  = newWidth  + 'px';
+    panel.style.height = newHeight + 'px';
+  }
+
+  function stopResize() {
+    isResizing = false;
+    document.removeEventListener('mousemove', handleResize);
+    document.removeEventListener('mouseup', stopResize);
+  }
+
+  // UX: zákaz selectu při drag/resize
+  panel.addEventListener('selectstart', (e) => {
+    if (isDragging || isResizing) e.preventDefault();
+  });
+
+  // Dblclick na header = toggle
+  panelHeader?.addEventListener('dblclick', () => {
+    minimizeBtn?.click();
+  });
+}
+
+// ✅ funkce se hoistuje
+function createParallelPanel(id, color) {
+  const panel = document.createElement("div");
+  panel.className = "parallel-panel";
+  panel.style = `
+    background: rgba(255,255,255,0.95);
+    color: #000;
+    padding: 6px 10px;
+    font-size: 12px;
+    border-radius: 6px;
+    min-width: 180px;
+    max-width: 220px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    border-left: 6px solid ${color};
+    position: relative;
+    cursor: move;
+  `;
+
+  panel.innerHTML = `
+    <div class="panel-header" style="font-weight:600; margin-bottom:4px; color:${color}">
+      ${id}
+      <button class="close-btn" style="float:right; border:none; background:none; cursor:pointer;">×</button>
+    </div>
+    <div class="panel-content">
+      <div class="info-item"><span class="info-label">Čas:</span> <span class="info-value">—</span></div>
+      <div class="info-item"><span class="info-label">GPS:</span> <span class="info-value">—</span></div>
+      <div class="info-item"><span class="info-label">Rychlost:</span> <span class="info-value">—</span></div>
+      <div class="info-item"><span class="info-label">Stav:</span> <span class="info-value">—</span></div>
+    </div>
+  `;
+
+  panel.querySelector(".close-btn").addEventListener("click", () => {
+    panel.remove();
+  });
+
+  makePanelDraggable(panel);
+  return panel;
+}
+
+function initParallelUI() {
+  console.log("🔧 [PARALLEL] Inicializuji Parallel Mode...");
+
+  const switchEl = document.getElementById('parallelModeSwitch');
+  console.log("🔧 [PARALLEL] Switch element:", !!switchEl);
+
+  if (switchEl && !switchEl._bound) {
+    switchEl.addEventListener('change', (e) => {
+      const toParallel = !!e.target.checked;
+
+      // vždy zastav a vyčisti předchozí režim
+      stopAnimation();
+
+      if (toParallel) {
+        window.parallelMode = true;
+        console.log("🔀 Přepínám na PARALLEL mode");
+        // single UI pryč (pro jistotu)
+        if (window.marker) { window.leafletMap.removeLayer(window.marker); window.marker = null; }
+        if (document.getElementById('ballInfoPanel')) document.getElementById('ballInfoPanel').remove();
+        if (window.singlePopup) { window.leafletMap.closePopup(window.singlePopup); window.singlePopup = null; }
+        // panely se vytvoří až při startParallelAnimation()
+      } else {
+        window.parallelMode = false;
+        console.log("🔀 Přepínám na SINGLE mode");
+        // smaž paralelní UI
+        const pc = document.getElementById('parallel-panels');
+        if (pc) pc.innerHTML = "";
+        if (window.parallelInstances) {
+          window.parallelInstances.forEach(t => {
+            if (t.marker) { window.leafletMap.removeLayer(t.marker); t.marker = null; }
+          });
+        }
+        // single panel se vytvoří až při startAnimation()
+      }
+    });
+    switchEl._bound = true;
+  }
+
+  const panel = document.getElementById('parallel-tracking-panel');
+  console.log("🔧 [PARALLEL] Panel existuje:", !!panel);
+  if (panel && !panel._bound) {
+    panel.addEventListener('click', (e) => {
+      const btn = e.target.closest('.dataset-btn');
+      if (!btn) return;
+      if (btn.disabled) {
+        console.warn("⛔️ Disabled:", btn.dataset.dataset);
+        return;
+      }
+      const ds = btn.dataset.dataset;  // např. RENDERER1
+      btn.classList.toggle('active');
+
+      if (btn.classList.contains('active')) {
+        const color   = pickColorForDataset(ds);
+        const dataset = window[`realData_${ds}`] || [];
+
+        window.parallelTracks[ds] = { dataset, color, id: `GH5200-${ds}` };
+        console.log(`✅ Dataset ${ds} přidán (${dataset.length} záznamů), barva ${color}`);
+
+        btn.style.backgroundColor = color;
+        btn.style.color = "#fff";
+        btn.style.borderColor = color;
+      } else {
+        delete window.parallelTracks[ds];
+        console.log(`❌ Dataset ${ds} odebrán`);
+
+        btn.style.backgroundColor = "";
+        btn.style.color = "";
+        btn.style.borderColor = "";
+      }
+    });
+    panel._bound = true;
+  }
+
+  const startBtn = document.getElementById('btn-parallel-start');
+  console.log("🔧 [PARALLEL] Start button:", !!startBtn);
+  if (startBtn && !startBtn._bound) {
+    startBtn.addEventListener('click', () => {
+      console.log("🚀 Parallel start button clicked; vybráno:", Object.keys(window.parallelTracks));
+      window.parallelMode = true;
+      if (window.animTimer) { clearTimeout(window.animTimer); window.animTimer = null; }
+      startParallelAnimation();
+    });
+    startBtn._bound = true;
+  }
+}
+
+
+function assignDatasetToId(hardwareId, datasetName, color) {
+  const dataset = window[`realData_${datasetName}`];
+  if (!dataset) {
+    console.error(`❌ Dataset ${datasetName} neexistuje`);
+    return;
+  }
+
+  window.parallelTracks[hardwareId] = {
+    dataset,
+    idx: 0,
+    marker: null,
+    color
+  };
+
+  console.log(`✅ Dataset ${datasetName} přiřazen k HW ${hardwareId}`);
+}
+
+// Statická konfigurace odstraněna - datasety se načítají dynamicky
+function pickColorForDataset(dsName) {
+  const palette = {
+    RENDERER1: "#ff0000",
+    RENDERER2: "#00ff00",
+    RENDERER3: "#0000ff",
+    RENDERER4: "#ffa500",
+    RENDERER5: "#800080",
+    RENDERER6: "#00ffff",
+    RENDERER7: "#ffff00"
+  };
+  return palette[dsName] || "#cccccc";
+}
+
+// === Normalizace času do time (ms) + timeStr ===
+function normalizeTime(rec) {
+  // 1) pokud už je číslo / Date:
+  if (rec.time instanceof Date) return { tms: rec.time.getTime(), tstr: rec.timeStr || rec.time.toISOString().slice(11,19) };
+  if (typeof rec.time === 'number' && Number.isFinite(rec.time)) {
+    const tstr = rec.timeStr || (new Date(rec.time)).toISOString().slice(11,19);
+    return { tms: rec.time, tstr };
+  }
+
+  // 2) timestamp v ISO
+  if (typeof rec.timestamp === 'string' && rec.timestamp.includes('T')) {
+    const d = Date.parse(rec.timestamp);
+    return { tms: d, tstr: (rec.timeStr || rec.timestamp.slice(11,19)) };
+  }
+
+  // 3) fallback – timeStr typu "HH:MM:SS"
+  if (typeof rec.timeStr === 'string' && /^\d{2}:\d{2}:\d{2}$/.test(rec.timeStr)) {
+    const parts = rec.timeStr.split(':').map(Number);
+    const tms = (parts[0]*3600 + parts[1]*60 + parts[2]) * 1000;
+    return { tms, tstr: rec.timeStr };
+  }
+
+  // 4) nouzově
+  return { tms: 0, tstr: rec.timeStr || '00:00:00' };
+}
+
+// === Výpočet rychlosti m/s mezi předchozím a aktuálním záznamem ===
+function computeSpeedMps(prev, curr) {
+  if (!prev || !curr) return 0;
+  const p = normalizeTime(prev);
+  const c = normalizeTime(curr);
+  const dt = (c.tms - p.tms) / 1000;
+  if (dt <= 0) return 0;
+  const distKm = turf.distance(
+    turf.point([prev.lng, prev.lat]),
+    turf.point([curr.lng, curr.lat]),
+    { units: 'kilometers' }
+  );
+  return (distKm * 1000) / dt;
+}
+
+// === Zóna (GREEN / RED / OUTSIDE) ===
+function computeZoneStatus(rec) {
+  const inGreen =
+    turf.booleanPointInPolygon(rec.point, smallPoly) ||
+    turf.booleanPointInPolygon(rec.point, segA_poly) ||
+    turf.booleanPointInPolygon(rec.point, segB_poly) ||
+    turf.booleanPointInPolygon(rec.point, segB_mez_poly) ||
+    turf.booleanPointInPolygon(rec.point, segC_poly) ||
+    turf.booleanPointInPolygon(rec.point, segD_poly) ||
+    turf.booleanPointInPolygon(rec.point, segE_poly) ||
+    turf.booleanPointInPolygon(rec.point, segF_poly) ||
+    turf.booleanPointInPolygon(rec.point, segG_poly);
+
+  const inRed = turf.booleanPointInPolygon(rec.point, bigPoly) && !inGreen;
+
+  return inGreen ? 'GREEN' : (inRed ? 'RED' : 'OUTSIDE');
+}
+
+// === Sjednocené zpracování jednoho vzorku (single i parallel) ===
+// ctx: { marker, panel, dataset, idx, color?, mode: 'single'|'parallel' }
+function processRecord(rec, ctx) {
+  if (!rec || !ctx) return;
+
+  // 1) normalizace času
+  const { tms, tstr } = normalizeTime(rec);
+  rec.time = tms;
+  rec.timeStr = tstr;
+
+  // 2) point (pro Turf)
+  rec.point = rec.point || turf.point([rec.lng, rec.lat]);
+
+  // 3) rychlost m/s
+  if (typeof rec.speed_mps !== 'number') {
+    const prev = ctx.dataset?.[Math.max(0, (ctx.idx || 0) - 1)];
+    rec.speed_mps = computeSpeedMps(prev, rec);
+  }
+
+  // 4) zóna
+  rec.zoneStatus = rec.zoneStatus || computeZoneStatus(rec);
+
+  // 5) posun markeru (single i parallel)
+  if (ctx.marker) {
+    ctx.marker.setLatLng([rec.lat, rec.lng]);
+  }
+
+  // 6) update UI:
+  if (ctx.mode === 'parallel' && ctx.panel) {
+    // Parallel: 4 řádky (Čas, GPS, Rychlost, Stav)
+    const rows = ctx.panel.querySelectorAll(".info-item .info-value");
+    if (rows.length >= 4) {
+      rows[0].textContent = rec.timeStr || "—";
+      rows[1].textContent = `${rec.lat.toFixed(6)}, ${rec.lng.toFixed(6)}`;
+      rows[2].textContent = `${(rec.speed_mps || 0).toFixed(2)} m/s`;
+
+      let stateText = "—";
+      if (rec.incident) stateText = "Incident";
+      else if (rec.zoneStatus === "GREEN") stateText = "V zóně";
+      else if (rec.zoneStatus === "RED") stateText = "Mimo zónu";
+      rows[3].textContent = stateText;
+
+      // barevné orámování podle stavu
+      if (rec.zoneStatus === 'GREEN') ctx.panel.style.borderLeftColor = '#22c55e';
+      else if (rec.zoneStatus === 'RED') ctx.panel.style.borderLeftColor = '#ef4444';
+      else ctx.panel.style.borderLeftColor = ctx.color || '#999';
+    }
+  } else {
+    // Single: aktualizuj velký panel + popup
+    updateBallInfoPanel(rec, rec.speed_mps, (rec.zoneStatus === 'GREEN'), (rec.zoneStatus === 'RED'));
+
+    // minimalistický popup (můžeš ponechat svůj updateMarkerPopup, tohle je náhrada)
+    const popupHtml = `
+      <div style="font-size:12px">
+        <b>${rec.timeStr}</b><br>
+        ${rec.lat.toFixed(5)}, ${rec.lng.toFixed(5)}<br>
+        v: ${rec.speed_mps.toFixed(2)} m/s · ${rec.zoneStatus}
+      </div>`;
+    if (!window.singlePopup) window.singlePopup = L.popup({ offset:[0,-10], closeButton:false });
+    window.singlePopup.setLatLng([rec.lat, rec.lng]).setContent(popupHtml).openOn(window.leafletMap);
+  }
+}
+
+
+function createBallInfoPanel() {
+  let panel = document.getElementById('ballInfoPanel');
+  if (panel) return (ballInfoPanel = panel);
+
+  panel = document.createElement('div');
+  panel.id = 'ballInfoPanel';
+  panel.style.position = 'absolute';
+  panel.style.left = '20px';
+  panel.style.top  = '20px';
+  panel.style.zIndex = '2000';
+  panel.style.background = '#fff';
+  panel.style.borderRadius = '12px';
+  panel.style.boxShadow = '0 4px 14px rgba(0,0,0,0.15)';
+  panel.style.minWidth = '300px';
+
+  panel.innerHTML = `
+    <div class="panel-header" style="background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: white; padding: 12px 16px; border-radius: 12px 12px 0 0; font-weight: 600; font-size: 16px; display: flex; justify-content: space-between; align-items: center; cursor: move; user-select: none;">
+      <div class="panel-title" style="display: flex; align-items: center; gap: 8px;">
+        <i class="bi bi-info-circle"></i>
+        Info o kuličce
+      </div>
+      <div class="panel-controls" style="display: flex; gap: 4px;">
+        <button class="control-btn" id="minimize-btn" title="Minimalizovat">−</button>
+        <button class="control-btn" id="close-btn" title="Zavřít">×</button>
+      </div>
+    </div>
+    <div class="panel-content" style="padding: 16px; max-height: 300px; overflow-y: auto;">
+      <div id="ball-info-content"></div>
+      <div id="mesh-extra" style="margin-top:8px; font-size:11px; color:#0d6efd"></div>
+    </div>
+    <div class="resize-handle" style="position:absolute; bottom:0; right:0; width: 16px; height: 16px; cursor: nw-resize;"></div>
+  `;
+
+  document.getElementById('map-wrapper')?.appendChild(panel);
+  attachBallInfoPanelBehaviors(panel);   // ✅ až teď
+  return (ballInfoPanel = panel);
+}
+
+
+function updateParallelPanel(hardwareId, rec) {
+  const el = document.getElementById(`panel-${hardwareId}`);
+  if (!el) return;
+
+  el.innerHTML = `
+    <strong>${hardwareId}</strong><br>
+    Čas: ${rec.timeStr || "—"}<br>
+    Souřadnice: ${rec.lat?.toFixed(6)}, ${rec.lng?.toFixed(6)}<br>
+    Rychlost: ${(rec.speed_mps||0).toFixed(2)} m/s<br>
+    Zóna: ${rec.inGreen ? "GREEN" : (rec.inRed ? "RED" : "—")}
+  `;
+}
+
+function processRecord(rec, track) {
+  if (!rec || !track) return;
+
+  // === 1) ČAS ===
+  if (!rec.timeStr) {
+    let d;
+    if (typeof rec.timestamp === "string") {
+      d = new Date(rec.timestamp);
+    } else if (typeof rec.timestamp === "number") {
+      d = new Date(rec.timestamp);
+    } else if (rec.timestamp?.seconds) {
+      d = new Date(rec.timestamp.seconds * 1000);
+    } else {
+      d = new Date();
+    }
+    rec.time = d;
+    rec.timeStr = d.toTimeString().split(" ")[0]; // HH:MM:SS
+  }
+
+  // === 2) POINT ===
+  if (!rec.point && rec.lat && rec.lng) {
+    rec.point = turf.point([rec.lng, rec.lat]);
+  }
+
+  // === 3) RYCHLOST (m/s) ===
+  if (typeof rec.speed_mps !== "number") {
+    const prev = (track.dataset && track.idx > 0) ? track.dataset[track.idx - 1] : null;
+    if (prev && prev.point && rec.point && prev.time && rec.time) {
+      const distKm = turf.distance(prev.point, rec.point, { units: "kilometers" });
+      const dt = (rec.time - prev.time) / 1000;
+      rec.speed_mps = dt > 0 ? (distKm * 1000) / dt : 0;
+    } else {
+      rec.speed_mps = 0;
+    }
+  }
+
+  // === 4) ZÓNOVÁNÍ ===
+  if (!rec.zoneStatus && rec.point) {
+    const inGreen =
+      turf.booleanPointInPolygon(rec.point, smallPoly) ||
+      turf.booleanPointInPolygon(rec.point, segA_poly) ||
+      turf.booleanPointInPolygon(rec.point, segB_poly) ||
+      turf.booleanPointInPolygon(rec.point, segB_mez_poly) ||
+      turf.booleanPointInPolygon(rec.point, segC_poly) ||
+      turf.booleanPointInPolygon(rec.point, segD_poly) ||
+      turf.booleanPointInPolygon(rec.point, segE_poly) ||
+      turf.booleanPointInPolygon(rec.point, segF_poly) ||
+      turf.booleanPointInPolygon(rec.point, segG_poly);
+
+    const inRed = turf.booleanPointInPolygon(rec.point, bigPoly) && !inGreen;
+
+    rec.zoneStatus = inGreen ? "GREEN" : inRed ? "RED" : "OUTSIDE";
+  }
+
+  // === 5) POSUN MARKERU ===
+  if (track.marker) {
+    track.marker.setLatLng([rec.lat, rec.lng]);
+  }
+
+  // === 6) UPDATE PANELU ===
+  const rows = track.panel?.querySelectorAll(".info-item .info-value");
+  if (rows?.length >= 4) {
+    rows[0].textContent = rec.timeStr || "—";
+    rows[1].textContent = `${rec.lat?.toFixed(6)}, ${rec.lng?.toFixed(6)}`;
+    rows[2].textContent = (rec.speed_mps ? rec.speed_mps.toFixed(2) : "0") + " m/s";
+
+    let stateText;
+    if (rec.incident) {
+      stateText = "Incident";
+    } else if (rec.zoneStatus === "GREEN") {
+      stateText = "V zóně";
+    } else if (rec.zoneStatus === "RED") {
+      stateText = "Mimo zónu";
+    } else {
+      stateText = "—";
+    }
+    rows[3].textContent = stateText;
+  }
+}
+
+
+
+window.addEventListener("FUSED_GPS_READY", e => {                                                         // --- Listener fallback ---
   const fused = e.detail.fused;
   console.log("✅ [RENDERER] Přijat fused dataset přes event:", fused.length, "záznamů");
   animationData = fused;
   idx = 0;
 });
 
+/**
+ * Přijme různé formáty času a vrátí objekt { ms, str }
+ * - ms: čas v milisekundách (Number)
+ * - str: čas jako "HH:MM:SS"
+ */
+function parseTimeString(input) {
+  if (!input) return { ms: NaN, str: "—" };
 
-// --- vždy vrátí hezký časový string, nikdy Date ani ms
-function getRecTimeStr(rec) {
-  return rec?.timeStr || "00:00:00";
+  // 1) Čistý formát HH:MM:SS
+  if (/^\d{2}:\d{2}:\d{2}$/.test(input)) {
+    const [h, m, s] = input.split(":").map(Number);
+    const ms = ((h * 60 + m) * 60 + s) * 1000;
+    return { ms, str: input };
+  }
+
+  // 2) ISO s datem "2025-06-04T06:54:44Z"
+  if (typeof input === "string" && input.includes("T") && input.endsWith("Z")) {
+    const hhmmss = input.substring(11, 19); // "06:54:44"
+    const [h, m, s] = hhmmss.split(":").map(Number);
+    const ms = ((h * 60 + m) * 60 + s) * 1000;
+    return { ms, str: hhmmss };
+  }
+
+  // 3) Číslo (už timestamp v ms)
+  if (typeof input === "number") {
+    const date = new Date(input);
+    const str = date.toISOString().substring(11, 19);
+    const ms = ((+str.substring(0, 2) * 60 + +str.substring(3, 5)) * 60 + +str.substring(6, 8)) * 1000;
+    return { ms, str };
+  }
+
+  // 4) fallback
+  return { ms: NaN, str: String(input) };
 }
 
 
@@ -244,9 +812,93 @@ const TIME_STEP = 100; // 100 ms
 const getMode = () => document.getElementById('channelSelect')?.value || 'none';
 const toDate  = v => (v instanceof Date ? v : new Date(v));
 
+// 🔧 INTERPOLACE PRO RENDERERDATA - detekce režimu
+function isRendererDataMode() {
+  const mode = getMode();
+  // RENDERERDATA se detekují podle názvu datasetu nebo režimu
+  return mode === 'none' || 
+         (typeof currentRendererData === 'string' && currentRendererData.startsWith('RENDERERDATA')) ||
+         (typeof window.realData_RENDERER !== 'undefined');
+}
+
+// 🔧 INTERPOLACE PRO RENDERERDATA - interpolace po 1s
+function interpolateToSeconds(src) {
+  if (!Array.isArray(src) || src.length < 2) return src;
+  
+  const result = [];
+  
+  for (let i = 0; i < src.length - 1; i++) {
+    const p1 = src[i];
+    const p2 = src[i + 1];
+
+    const t1 = parseTimeString(p1.timestamp || p1.TIME || p1.timeStr || p1.time).ms;
+    const t2 = parseTimeString(p2.timestamp || p2.TIME || p2.timeStr || p2.time).ms;
+    const dt = Math.round((t2 - t1) / 1000);
+
+    if (dt <= 1) {
+      result.push(p1);
+      continue;
+    }
+
+    // přidáme původní bod
+    result.push(p1);
+
+    // vložíme interpolované body po sekundách
+    for (let s = 1; s < dt; s++) {
+      const f = s / dt;
+      result.push({
+        timestamp: new Date(t1 + s * 1000).toISOString(),
+        lat: +p1.lat + f * (+p2.lat - +p1.lat),
+        lng: +p1.lng + f * (+p2.lng - +p1.lng)
+      });
+    }
+  }
+  
+  // poslední bod
+  result.push(src[src.length - 1]);
+  
+  console.log(`🔧 [INTERPOLATE] Original: ${src.length} → Interpolated: ${result.length} records`);
+  return result;
+}
+
+// 🔧 KLOUZAVÝ PRŮMĚR RYCHLOSTI ZA POSLEDNÍCH 10S
+function smoothSpeed(data, windowSize = 10) {
+  for (let i = 0; i < data.length; i++) {
+    const start = Math.max(0, i - windowSize);
+    const window = data.slice(start, i + 1);
+
+    // vzdálenost od prvního do posledního bodu v okně
+    const d = turf.distance(
+      turf.point([window[0].lng, window[0].lat]),
+      turf.point([window[window.length - 1].lng, window[window.length - 1].lat]),
+      { units: "meters" }
+    );
+    const dt = window.length; // v sekundách (protože máme sekundový krok)
+
+    const avgSpeed = d / dt;
+    data[i].speed_mps = avgSpeed;
+
+    // 🔧 KLASIFIKACE POHYBU PODLE VAŠICH PARAMETRŮ
+    if (avgSpeed <= 0) {
+      data[i].movementType = "Stání";
+    } else if (avgSpeed <= 0.7) {
+      data[i].movementType = "Pomalá chůze";
+    } else if (avgSpeed <= 1.2) {
+      data[i].movementType = "Standardní chůze";
+    } else if (avgSpeed <= 1.7) {
+      data[i].movementType = "Rychlá chůze";
+    } else if (avgSpeed <= 2.5) {
+      data[i].movementType = "Běh";
+    } else {
+      data[i].movementType = "Sprint";
+    }
+  }
+  return data;
+}
+
 function stopSingle() {
   animationActive = false;
-  if (window.timer) { clearTimeout(window.timer); window.timer = null; }
+  if (window.animTimer) { clearTimeout(window.animTimer); window.animTimer = null; }
   if (window.marker) { map.removeLayer(window.marker); window.marker = null; }
 
   // zavřít všechny malé pop-upy
@@ -380,6 +1032,254 @@ function getDistToSmallPoly(point) {
   return Math.min(...ring.map(coord => turf.distance(point, turf.point(coord), {units: 'meters'})));
 }
 
+// --- POPUP HELPER FUNKCE ---
+function checkZoneStatus(rec) {
+  const pt = turf.point([rec.lng, rec.lat]);
+  const inGreen = turf.booleanPointInPolygon(pt, smallPoly);
+  const inRed   = turf.booleanPointInPolygon(pt, bigPoly);
+
+  if (inGreen) return "GREEN";
+  if (inRed) return "RED";
+  return "OUTSIDE";
+}
+
+function getMovementTypeColor(speed) {
+  // 🎨 BARVY PRO RŮZNÉ TYPY POHYBU
+  if (speed <= 0) return "#6c757d";        // Šedá pro stání
+  if (speed <= 0.7) return "#28a745";      // Zelená pro pomalou chůzi
+  if (speed <= 1.2) return "#17a2b8";      // Modrá pro standardní chůzi
+  if (speed <= 1.7) return "#ffc107";      // Žlutá pro rychlou chůzi
+  if (speed <= 2.5) return "#fd7e14";      // Oranžová pro běh
+  return "#dc3545";                        // Červená pro sprint
+}
+
+function updateMarkerPopup(rec, calculatedSpeed = null, inGreen = null, inRed = null) {
+  if (!window.marker || !rec) return;
+
+  // 🔧 POUŽÍT VYPOČÍTANÉ HODNOTY Z STEP() FUNKCE MÍSTO checkZoneStatus()
+  let zoneStatus;
+  if (inGreen !== null && inRed !== null) {
+    // Použít hodnoty z step() funkce
+    if (inGreen) zoneStatus = "GREEN";
+    else if (inRed) zoneStatus = "RED";
+    else zoneStatus = "OUTSIDE";
+  } else {
+    // Fallback na původní logiku
+    zoneStatus = checkZoneStatus(rec);
+  }
+  
+  // 🔧 POUŽÍT VYPOČÍTANOU RYCHLOST Z STEP() FUNKCE
+  const speed = calculatedSpeed !== null ? calculatedSpeed : (rec.speed_mps || 0);
+  // 🔧 POUŽÍT PŘEDPOČÍTANÝ TYP POHYBU NEBO FALLBACK
+  const movementType = rec.movementType || getMovementType(speed);
+  
+  // 🔧 PŘIDAT KM/H PRO LEPŠÍ PŘEHLEDNOST
+  const kmh = speed * 3.6;
+
+  const popupContent = `
+    <div style="font-size: 11px; line-height: 1.3; max-width: 200px; color: #333;">
+      <b style="color: #333;">Čas:</b> <span style="color: #333;">${rec.timeStr}</span><br>
+      <b style="color: #333;">GPS:</b> <span style="color: #333;">${rec.lat.toFixed(5)}, ${rec.lng.toFixed(5)}</span><br>
+      <b style="color: #333;">Zóna:</b> <span style="color: ${zoneStatus === 'GREEN' ? 'green' : zoneStatus === 'RED' ? 'red' : 'gray'}">${zoneStatus}</span><br>
+      <b style="color: #333;">Rychlost:</b> <span style="color: #333;">${speed.toFixed(1)} m/s (${kmh.toFixed(0)} km/h)</span><br>
+      <b style="color: #333;">Typ:</b> <span style="color: ${getMovementTypeColor(speed)}">${movementType}</span>
+    </div>
+  `;
+
+  window.marker.setPopupContent(popupContent);
+
+  // 🔧 STABILNÍ POZICIONOVÁNÍ POPUP PANELU
+  setStablePopupPosition(rec.lat, rec.lng);
+}
+// 🔧 STABILNÍ POZICIONOVÁNÍ POPUP PANELU BEZ BLIKÁNÍ
+let customPopup = null;
+
+function setStablePopupPosition(lat, lng) {
+  if (!window.marker) return;
+  
+  // Responzivní vzdálenost podle velikosti obrazovky
+  const isFullscreen = document.fullscreenElement || document.webkitFullscreenElement;
+  const baseDistance = isFullscreen ? 80 : 60;
+  
+  // Najít nejbližší bod na okraji RED polygonu
+  const redEdgePoint = findNearestRedPolygonEdge(lat, lng);
+  
+  if (redEdgePoint) {
+    // Vypočítat směr od kuličky k okraji RED polygonu
+    const ballLatLng = L.latLng(lat, lng);
+    const ballPixel = map.latLngToContainerPoint(ballLatLng);
+    
+    const direction = {
+      x: redEdgePoint.x - ballPixel.x,
+      y: redEdgePoint.y - ballPixel.y
+    };
+    
+    // Normalizovat směr
+    const length = Math.sqrt(direction.x * direction.x + direction.y * direction.y);
+    if (length > 0) {
+      direction.x = (direction.x / length) * baseDistance;
+      direction.y = (direction.y / length) * baseDistance;
+    }
+    
+    // Vytvořit nebo aktualizovat vlastní popup element
+    createCustomPopup(ballPixel.x + direction.x, ballPixel.y + direction.y);
+  } else {
+    // Fallback: pozice nahoru
+    const ballLatLng = L.latLng(lat, lng);
+    const ballPixel = map.latLngToContainerPoint(ballLatLng);
+    createCustomPopup(ballPixel.x, ballPixel.y - baseDistance);
+  }
+}
+
+// 🔧 VYTVOŘENÍ VLASTNÍHO POPUP ELEMENTU
+function createCustomPopup(x, y) {
+  // Odstranit starý popup pokud existuje
+  if (customPopup) {
+    customPopup.remove();
+  }
+  
+  // Vytvořit nový popup element
+  customPopup = document.createElement('div');
+  customPopup.className = 'custom-ball-popup';
+  customPopup.style.cssText = `
+    position: absolute;
+    left: ${x}px;
+    top: ${y}px;
+    background: white;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    padding: 8px;
+    font-size: 11px;
+    line-height: 1.3;
+    max-width: 200px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    z-index: 1000;
+    pointer-events: none;
+    transform: translate(-50%, -100%);
+    color: #333;
+  `;
+  
+  // Přidat obsah
+  const popupContent = window.marker.getPopup().getContent();
+  customPopup.innerHTML = popupContent;
+  
+  // Přidat do mapy
+  document.getElementById('leafletMap').appendChild(customPopup);
+}
+
+// 🔧 FUNKCE PRO NALEZENÍ NEJBLIŽŠÍHO BODU NA OKRAJI RED POLYGONU
+function findNearestRedPolygonEdge(lat, lng) {
+  if (!bigPoly || !Array.isArray(bigPoly)) return null;
+  
+  const ballPoint = turf.point([lng, lat]);
+  let nearestPoint = null;
+  let minDistance = Infinity;
+  
+  // Projít všechny RED polygony
+  for (const polygon of bigPoly) {
+    if (!polygon || !polygon.coordinates) continue;
+    
+    // Najít nejbližší bod na okraji polygonu
+    const edgePoints = getPolygonEdgePoints(polygon);
+    
+    for (const edgePoint of edgePoints) {
+      const distance = turf.distance(ballPoint, edgePoint, { units: 'meters' });
+      
+      if (distance < minDistance) {
+        minDistance = distance;
+        nearestPoint = edgePoint;
+      }
+    }
+  }
+  
+  if (nearestPoint) {
+    // Převest zpět na pixelové souřadnice
+    const nearestLatLng = L.latLng(nearestPoint.geometry.coordinates[1], nearestPoint.geometry.coordinates[0]);
+    return map.latLngToContainerPoint(nearestLatLng);
+  }
+  
+  return null;
+}
+
+// 🔧 POMOCNÁ FUNKCE PRO ZÍSKÁNÍ BODŮ NA OKRAJI POLYGONU
+function getPolygonEdgePoints(polygon) {
+  const points = [];
+  
+  if (polygon.coordinates && polygon.coordinates[0]) {
+    const ring = polygon.coordinates[0];
+    
+    for (let i = 0; i < ring.length - 1; i++) {
+      const point = turf.point([ring[i][0], ring[i][1]]);
+      points.push(point);
+    }
+  }
+  
+  return points;
+}
+
+// 🔧 POMOCNÁ FUNKCE PRO KONTROLU GREEN POLYGONU
+function checkIfInGreenPolygon(lat, lng) {
+  if (!smallPoly || !Array.isArray(smallPoly)) return false;
+  
+  const point = turf.point([lng, lat]);
+  
+  for (const polygon of smallPoly) {
+    if (turf.booleanPointInPolygon(point, polygon)) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+// 🔧 FUNKCE PRO AKTUALIZACI VELKÉHO INFO PANELU
+function updateBallInfoPanel(rec, calculatedSpeed = null, inGreen = null, inRed = null) {
+  const ballInfoContent = document.getElementById('ball-info-content');
+  if (!ballInfoContent) return;
+
+  // 🔧 POUŽÍT VYPOČÍTANÉ HODNOTY Z STEP() FUNKCE
+  let zoneStatus;
+  if (inGreen !== null && inRed !== null) {
+    if (inGreen) zoneStatus = "GREEN";
+    else if (inRed) zoneStatus = "RED";
+    else zoneStatus = "OUTSIDE";
+  } else {
+    zoneStatus = checkZoneStatus(rec);
+  }
+  
+  // 🔧 POUŽÍT VYPOČÍTANOU RYCHLOST Z STEP() FUNKCE
+  const speed = calculatedSpeed !== null ? calculatedSpeed : (rec.speed_mps || 0);
+  const movementType = rec.movementType || getMovementType(speed);
+  const kmh = speed * 3.6;
+
+  const panelContent = `
+    <div class="info-item">
+      <div class="info-label">Čas:</div>
+      <div class="info-value">${rec.timeStr}</div>
+    </div>
+    <div class="info-item">
+      <div class="info-label">GPS:</div>
+      <div class="info-value">${rec.lat.toFixed(6)}, ${rec.lng.toFixed(6)}</div>
+    </div>
+    <div class="info-item">
+      <div class="info-label">Zóna:</div>
+      <div class="info-value">
+        <span class="status-badge ${zoneStatus === 'GREEN' ? 'green' : zoneStatus === 'RED' ? 'red' : 'yellow'}">${zoneStatus}</span>
+      </div>
+    </div>
+    <div class="info-item">
+      <div class="info-label">Rychlost:</div>
+      <div class="info-value">${speed.toFixed(2)} m/s (${kmh.toFixed(1)} km/h)</div>
+    </div>
+    <div class="info-item">
+      <div class="info-label">Typ pohybu:</div>
+      <div class="info-value" style="color: ${getMovementTypeColor(speed)}">${movementType}</div>
+    </div>
+  `;
+
+  ballInfoContent.innerHTML = panelContent;
+}
+
 // --- Mapa a marker ---
   map = L.map('leafletMap').setView([greenCenter[1], greenCenter[0]], 17);
   window.leafletMap = map;
@@ -390,9 +1290,6 @@ function getDistToSmallPoly(point) {
   maxZoom: 20,
   noWrap: true
 }).addTo(window.leafletMap);
-
-
-
 
   if (window.AF && typeof window.AF.init === 'function') {
   window.AF.init(window.leafletMap || map);
@@ -457,41 +1354,34 @@ const pickLng = o => {
   return (o.LONG ?? o.x);
 };
 
-function makeAnimSeries(src) {
+// ✅ PARSING FUNKCE PRO RŮZNÉ FORMÁTY ČASU
+
+function makeAnimSeries(src, srcName = "") {
   console.log("🔧 [MAKE-ANIM-SERIES] Input src length:", src ? src.length : 0);
   console.log("🔧 [MAKE-ANIM-SERIES] First 3 records:", src ? src.slice(0, 3) : []);
-  
+
+  if (!Array.isArray(src) || src.length === 0) return [];
+
+  // 🔥 Pokud je dataset typu RENDERER → provedeme interpolaci
+  if (srcName.startsWith("RENDERER") || isRendererDataMode()) {
+    console.log("🔧 [MAKE-ANIM-SERIES] RENDERER dataset → provádím interpolaci...");
+    src = interpolateToSeconds(src);
+  }
+
   const result = (src || [])
-    .filter(d => {
-      const hasValidCoords = d && Number.isFinite(+d.lat) && Number.isFinite(+d.lng);
-      if (!hasValidCoords) {
-        console.log("🔧 [MAKE-ANIM-SERIES] Filtered out record:", d);
-      }
-      return hasValidCoords;
-    })
+    .filter(d => Number.isFinite(+d.lat) && Number.isFinite(+d.lng))
     .map(d => {
-      // čas řešíme jednoduše:
-      let tms = null;
+      const rawTime = d.TIME || d.timestamp || d.timeStr || d.time;
+      const { ms, str } = parseTimeString(rawTime);
 
-      if (typeof d.time === 'number' && Number.isFinite(d.time)) {
-        tms = d.time; // už ms od začátku
-      }
-
-      // fallback – když se nepodaří čas, dej 0
-      if (tms == null) tms = 0;
-
-      const lat = +d.lat;
-      const lng = +d.lng;
       return {
-        point: turf.point([lng, lat]),
-
-        // 🔑 JEN čisté hodnoty z FUSED_GPS.js
-        time: Number(d.time),        // číselně
-        timeStr: d.timeStr || "00:00:00",
-
-        lat,
-        lng,
+        point: turf.point([+d.lng, +d.lat]),
+        time: ms,              // vždy ms od půlnoci
+        timeStr: str,          // vždy HH:MM:SS
+        lat: +d.lat,
+        lng: +d.lng,
         speed_mps:     (d.speed_mps ?? null),
+        movementType:  (d.movementType ?? null),
         dist_to_m:     (d.dist_to_m ?? null),
         mesh_id:       (d.mesh_id ?? null),
         matched_count: (d.matched_count ?? 0),
@@ -500,13 +1390,43 @@ function makeAnimSeries(src) {
         crossMode: d.crossMode || { active: false, crossing: null, decision: null }
       };
     });
-    
+
+  // 🔥 Pokud je dataset typu RENDERER → dopočítej rychlost a typ pohybu
+  if (srcName.startsWith("RENDERER") || isRendererDataMode()) {
+    smoothSpeed(result, 10);
+  }
+
   console.log("🔧 [MAKE-ANIM-SERIES] Output result length:", result.length);
   console.log("🔧 [MAKE-ANIM-SERIES] First 3 processed records:", result.slice(0, 3));
-  
+
   return result;
 }
-console.log('sample realData[0]:', window.realData && window.realData[0]);
+// ✅ HELPER FUNKCE PRO GNSS DATASETY
+function getCurrentGnssDataset() {
+  // Najít aktuálně načtený GNSS dataset
+  const gnssDates = ['04062025', '22072025', '30042025', '29042025', '16042025', '10042025'];
+  
+  for (const date of gnssDates) {
+    const dataset = window[`realData_GNSS_${date}`];
+    if (Array.isArray(dataset) && dataset.length > 0) {
+      return dataset;
+    }
+  }
+  
+  return null;
+}
+
+function clearAllGnssDatasets() {
+  const gnssDates = ['04062025', '22072025', '30042025', '29042025', '16042025', '10042025'];
+  
+  gnssDates.forEach(date => {
+    if (window[`realData_GNSS_${date}`]) {
+      delete window[`realData_GNSS_${date}`];
+    }
+  });
+}
+
+console.log('sample realData[0]:', getCurrentGnssDataset() && getCurrentGnssDataset()[0]);
 
 // markerky MESH bodů (z datasetu přes getMeshSrc)
 const meshSrc = getMeshSrc();
@@ -602,13 +1522,42 @@ function clearMeshUI() {
 let anchorMode = 'with-number';
 
 const anchorMarkers = ANCHORS.map(a => {
+  // 🔧 VYTVOŘENÍ EFEKTIVNÍCH KOTEV S ANIMACÍ
   const m = L.circleMarker(
     [ a.lat, a.lng ],
     {
-      radius: 2,
-      color: 'blue',
-      fillColor: 'blue',
-      fillOpacity: 1
+      radius: 8,
+      color: '#2563eb',
+      fillColor: '#3b82f6',
+      weight: 2,
+      opacity: 1,
+      fillOpacity: 0.9
+    }
+  ).addTo(map);
+
+  // 🔧 PŘIDÁNÍ ANIMOVANÉHO SVĚTLA BATTERKY
+  const flashlight = L.circleMarker(
+    [ a.lat, a.lng ],
+    {
+      radius: 25,
+      color: 'transparent',
+      fillColor: '#fbbf24',
+      weight: 0,
+      opacity: 0,
+      fillOpacity: 0
+    }
+  ).addTo(map);
+
+  // 🔧 PŘIDÁNÍ VNITŘNÍHO JÁDRA
+  const core = L.circleMarker(
+    [ a.lat, a.lng ],
+    {
+      radius: 6,
+      color: '#f59e0b',
+      fillColor: '#fbbf24',
+      weight: 2,
+      opacity: 0,
+      fillOpacity: 0
     }
   ).addTo(map);
 
@@ -624,25 +1573,33 @@ const anchorMarkers = ANCHORS.map(a => {
   m.on('dblclick', () => {
     m.unbindTooltip();
   });
-  return { id: a.anchorNumber, marker: m };
+  
+  return { 
+    id: a.anchorNumber, 
+    marker: m, 
+    flashlight: flashlight,
+    core: core
+  };
 });
 
 
 // Funkce pro nastavení zobrazení kotev podle módu
 function updateAnchorDisplay() {
-  anchorMarkers.forEach(({ id, marker }) => {
+  anchorMarkers.forEach(({ id, marker, flashlight, core }) => {
     if (anchorMode === 'none') {
       marker.setStyle({ opacity: 0, fillOpacity: 0 });
+      flashlight.setStyle({ opacity: 0, fillOpacity: 0 });
+      core.setStyle({ opacity: 0, fillOpacity: 0 });
       marker.unbindTooltip();
     } else {
-      marker.setStyle({ opacity: 1, fillOpacity: 1 });
-    if (anchorMode === 'with-number') {
-      marker.bindTooltip(`${id}`, {
-      permanent: true,
-      direction: 'top',
-      className: 'anchor-tooltip'
-     }).openTooltip();
-   } else {
+      marker.setStyle({ opacity: 1, fillOpacity: 0.9 });
+      if (anchorMode === 'with-number') {
+        marker.bindTooltip(`${id}`, {
+        permanent: true,
+        direction: 'top',
+        className: 'anchor-tooltip'
+       }).openTooltip();
+     } else {
         marker.unbindTooltip();
       }
     }
@@ -676,14 +1633,90 @@ document.getElementById('anchorModeSelect').addEventListener('change', e => {
 updateAnchorDisplay();
 
 
+// 🔧 GLOBÁLNÍ PROMĚNNÁ PRO AKTIVNÍ KOTVY
+let activeAnchors = new Set();
+
 function updateAnchorColors(latlng) {
-  anchorMarkers.forEach(({ marker }) => {
+  const newActiveAnchors = new Set();
+  
+  anchorMarkers.forEach(({ id, marker, flashlight, core }) => {
     const d = latlng.distanceTo(marker.getLatLng());
-    marker.setStyle(d <= 7
-      ? { color: 'red', fillColor: 'red' }
-      : { color: 'blue', fillColor: 'blue' }
-    );
+    const isActive = d <= 7;
+    
+    if (isActive) {
+      // 🔧 AKTIVNÍ KOTVA - SVĚTLO BATTERKY
+      marker.setStyle({ 
+        color: '#dc2626', 
+        fillColor: '#ef4444',
+        radius: 10,
+        weight: 3
+      });
+      
+      // 🔧 ANIMOVANÉ SVĚTLO BATTERKY
+      flashlight.setStyle({
+        opacity: 0.6,
+        fillOpacity: 0.4,
+        radius: 30
+      });
+      
+      // 🔧 VNITŘNÍ JÁDRO
+      core.setStyle({
+        opacity: 1,
+        fillOpacity: 0.9,
+        radius: 8
+      });
+      
+      newActiveAnchors.add(id);
+    } else {
+      // 🔧 NEAKTIVNÍ KOTVA - KLIDNÝ STAV
+      marker.setStyle({ 
+        color: '#2563eb', 
+        fillColor: '#3b82f6',
+        radius: 8,
+        weight: 2
+      });
+      
+      // 🔧 SKRYTÍ EFEKTŮ
+      flashlight.setStyle({
+        opacity: 0,
+        fillOpacity: 0
+      });
+      
+      core.setStyle({
+        opacity: 0,
+        fillOpacity: 0
+      });
+    }
   });
+  
+  // 🔧 AKTUALIZACE SEZNAMU AKTIVNÍCH KOTEV
+  activeAnchors = newActiveAnchors;
+  updateActiveAnchorsDisplay();
+}
+
+// 🔧 NOVÁ FUNKCE PRO AKTUALIZACI ZOBRAZENÍ AKTIVNÍCH KOTEV
+function updateActiveAnchorsDisplay() {
+  const countEl = document.getElementById('active-anchors-count');
+  const listEl = document.getElementById('active-anchors-list');
+  
+  if (!countEl || !listEl) return;
+  
+  const activeCount = activeAnchors.size;
+  countEl.textContent = activeCount;
+  
+  if (activeCount === 0) {
+    listEl.innerHTML = '<div class="text-muted">Žádné aktivní kotvy</div>';
+  } else {
+    const anchorIds = Array.from(activeAnchors).sort((a, b) => a - b);
+    listEl.innerHTML = anchorIds.map(id => 
+      `<div class="badge bg-danger me-1 mb-1">${id}</div>`
+    ).join('');
+  }
+  
+  // 🔍 DEBUG: Logování pro diagnostiku
+  if (activeCount > 0) {
+    console.log(`🔴 [ACTIVE-ANCHORS] Aktivní kotvy: [${Array.from(activeAnchors).join(', ')}]`);
+  }
 }
 
 const style = document.createElement('style');
@@ -696,6 +1729,37 @@ style.innerHTML = `
     font-size: 10px;
     font-weight: normal;
     color: black;
+  }
+  
+  /* 🔧 ANIMACE PRO AKTIVNÍ KOTVY */
+  @keyframes flashlightPulse {
+    0% { 
+      opacity: 0.3; 
+      transform: scale(1);
+    }
+    50% { 
+      opacity: 0.7; 
+      transform: scale(1.1);
+    }
+    100% { 
+      opacity: 0.3; 
+      transform: scale(1);
+    }
+  }
+  
+  @keyframes coreGlow {
+    0% { 
+      opacity: 0.8; 
+      transform: scale(1);
+    }
+    50% { 
+      opacity: 1; 
+      transform: scale(1.2);
+    }
+    100% { 
+      opacity: 0.8; 
+      transform: scale(1);
+    }
   }
 `;
 document.head.appendChild(style);
@@ -766,59 +1830,29 @@ function checkIncidents(point) {
   }
 }
 
-// Incident panel 
-const infoPanel = document.createElement('div');
-infoPanel.id = "infoPanel";
-Object.assign(infoPanel.style, {
-  position:'absolute', top:'10px', left:'calc(100% - 340px)', width:'320px', maxHeight:'260px', overflowY:'auto',
-  background:'rgba(255,255,255,0.9)', border:'1px solid #ccc',
-  borderRadius:'8px', padding:'12px', fontSize:'12px', zIndex:1000,
-});
-infoPanel.innerHTML = `
-  <div style="display:flex; justify-content:space-between;"><strong>Incident Log</strong>
-    <button id="clear-logs" style="font-size:10px; padding:2px 5px;">Vymazat</button>
-  </div>
-  <ul id="log-list" style="margin:8px 0; padding-left:16px;"></ul>
-`;
+// Incident panel - nyní v HTML, jen připojíme event handlery
+const exportLogBtn = document.getElementById('exportLogBtn');
+const clearLogsBtn = document.getElementById('clear-logs');
 
-// --- Tlačítko pro export incidentů ---
-const exportIncidentsBtn = document.createElement('button');
-exportIncidentsBtn.textContent = "Exportovat incidenty";
-exportIncidentsBtn.style = "margin-top:10px; font-size:11px; padding:5px 10px; background:#007bff; color:white; border:none; border-radius:4px; cursor:pointer;";
-exportIncidentsBtn.onclick = () => {
-  const blob = new Blob([JSON.stringify(incidents, null, 2)], {type: "application/json"});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  const today = new Date().toISOString().slice(0,10);
-  a.href = url;
-  a.download = `incident_log_${today}.json`;
-  a.click();
-  URL.revokeObjectURL(url);
-};
-infoPanel.appendChild(exportIncidentsBtn);
-document.getElementById('map-wrapper')?.appendChild(infoPanel);
+if (exportLogBtn) {
+  exportLogBtn.onclick = () => {
+    const blob = new Blob([JSON.stringify(incidents, null, 2)], {type: "application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const today = new Date().toISOString().slice(0,10);
+    a.href = url;
+    a.download = `incident_log_${today}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+}
 
-// --- Modern Info panel pro kuličku ---
-const ballInfoPanel = document.createElement('div');
-ballInfoPanel.id = 'ballInfoPanel';
-ballInfoPanel.innerHTML = `
-  <div class="panel-header" style="background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: white; padding: 12px 16px; border-radius: 12px 12px 0 0; font-weight: 600; font-size: 16px; display: flex; justify-content: space-between; align-items: center; cursor: move; user-select: none;">
-    <div class="panel-title" style="display: flex; align-items: center; gap: 8px;">
-      <i class="bi bi-info-circle"></i>
-      Info o kuličce
-    </div>
-    <div class="panel-controls" style="display: flex; gap: 4px;">
-      <button class="control-btn" id="minimize-btn" title="Minimalizovat" style="width: 20px; height: 20px; border-radius: 50%; border: none; background: rgba(255, 255, 255, 0.2); color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; transition: all 0.2s ease;">−</button>
-      <button class="control-btn" id="close-btn" title="Zavřít" style="width: 20px; height: 20px; border-radius: 50%; border: none; background: rgba(255, 255, 255, 0.2); color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; transition: all 0.2s ease;">×</button>
-    </div>
-  </div>
-  <div class="panel-content" style="padding: 16px; max-height: 300px; overflow-y: auto; font-family: 'Inter', sans-serif;">
-    <div id="ball-info-content"></div>
-    <div id="mesh-extra" style="margin-top:8px; font-size:11px; color:#0d6efd"></div>
-  </div>
-  <div class="resize-handle" style="position: absolute; bottom: 0; right: 0; width: 20px; height: 20px; background: linear-gradient(-45deg, transparent 30%, rgba(0, 0, 0, 0.1) 30%, rgba(0, 0, 0, 0.1) 70%, transparent 70%); cursor: nw-resize; border-radius: 0 0 12px 0;"></div>
-`;
-document.getElementById('map-wrapper')?.appendChild(ballInfoPanel);
+if (clearLogsBtn) {
+  clearLogsBtn.onclick = () => {
+    incidents = [];
+    updateIncidentBoxes();
+  };
+}
 
 function _hudMps(prev, cur){
   if (!prev || !cur) return null;
@@ -888,144 +1922,6 @@ function updateGnssHud(b){
 }
 
 
-
-// --- Enhanced Drag and Resize Functionality ---
-(function() {
-  let isDragging = false;
-  let isResizing = false;
-  let startX, startY, startWidth, startHeight, startLeft, startTop;
-  let isMinimized = false;
-
-  // Panel control buttons
-  const minimizeBtn = document.getElementById('minimize-btn');
-  const closeBtn = document.getElementById('close-btn');
-  const panelHeader = ballInfoPanel.querySelector('.panel-header');
-  const panelContent = ballInfoPanel.querySelector('.panel-content');
-  const resizeHandle = ballInfoPanel.querySelector('.resize-handle');
-
-  // Minimize functionality
-  minimizeBtn?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    isMinimized = !isMinimized;
-    if (isMinimized) {
-      panelContent.style.display = 'none';
-      ballInfoPanel.style.height = 'auto';
-      minimizeBtn.textContent = '+';
-      minimizeBtn.title = 'Rozbalit';
-    } else {
-      panelContent.style.display = 'block';
-      ballInfoPanel.style.height = '';
-      minimizeBtn.textContent = '−';
-      minimizeBtn.title = 'Minimalizovat';
-    }
-  });
-
-  // Close functionality
-  closeBtn?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    ballInfoPanel.style.display = 'none';
-  });
-
-  // Function to show panel (can be called from outside)
-  window.showBallInfoPanel = () => {
-    ballInfoPanel.style.display = 'block';
-  };
-
-  // Drag functionality - only on header
-  panelHeader.addEventListener('mousedown', (e) => {
-    if (e.target.closest('.control-btn')) return; // Don't drag when clicking control buttons
-    
-    isDragging = true;
-    startX = e.clientX;
-    startY = e.clientY;
-    startLeft = parseInt(window.getComputedStyle(ballInfoPanel).left, 10);
-    startTop = parseInt(window.getComputedStyle(ballInfoPanel).top, 10);
-    
-    ballInfoPanel.classList.add('dragging');
-    document.addEventListener('mousemove', handleDrag);
-    document.addEventListener('mouseup', stopDrag);
-    e.preventDefault();
-  });
-
-  // Resize functionality
-  resizeHandle.addEventListener('mousedown', (e) => {
-    isResizing = true;
-    startX = e.clientX;
-    startY = e.clientY;
-    startWidth = parseInt(window.getComputedStyle(ballInfoPanel).width, 10);
-    startHeight = parseInt(window.getComputedStyle(ballInfoPanel).height, 10);
-    
-    ballInfoPanel.classList.add('resizing');
-    document.addEventListener('mousemove', handleResize);
-    document.addEventListener('mouseup', stopResize);
-    e.preventDefault();
-    e.stopPropagation();
-  });
-
-  function handleDrag(e) {
-    if (!isDragging) return;
-    
-    const deltaX = e.clientX - startX;
-    const deltaY = e.clientY - startY;
-    
-    const newLeft = startLeft + deltaX;
-    const newTop = startTop + deltaY;
-    
-    // Keep panel within viewport bounds
-    const mapWrapper = document.getElementById('map-wrapper');
-    const mapRect = mapWrapper.getBoundingClientRect();
-    const panelRect = ballInfoPanel.getBoundingClientRect();
-    
-    const maxLeft = mapRect.width - panelRect.width;
-    const maxTop = mapRect.height - panelRect.height;
-    
-    ballInfoPanel.style.left = Math.max(0, Math.min(newLeft, maxLeft)) + 'px';
-    ballInfoPanel.style.top = Math.max(0, Math.min(newTop, maxTop)) + 'px';
-    ballInfoPanel.style.bottom = 'auto';
-    ballInfoPanel.style.right = 'auto';
-  }
-
-  function handleResize(e) {
-    if (!isResizing) return;
-    
-    const deltaX = e.clientX - startX;
-    const deltaY = e.clientY - startY;
-    
-    const newWidth = Math.max(280, startWidth + deltaX); // Min width 280px
-    const newHeight = Math.max(120, startHeight + deltaY); // Min height 120px
-    
-    ballInfoPanel.style.width = newWidth + 'px';
-    ballInfoPanel.style.height = newHeight + 'px';
-  }
-
-  function stopDrag() {
-    isDragging = false;
-    ballInfoPanel.classList.remove('dragging');
-    document.removeEventListener('mousemove', handleDrag);
-    document.removeEventListener('mouseup', stopDrag);
-  }
-
-  function stopResize() {
-    isResizing = false;
-    ballInfoPanel.classList.remove('resizing');
-    document.removeEventListener('mousemove', handleResize);
-    document.removeEventListener('mouseup', stopResize);
-  }
-
-  // Prevent text selection during drag/resize
-  ballInfoPanel.addEventListener('selectstart', (e) => {
-    if (isDragging || isResizing) {
-      e.preventDefault();
-    }
-  });
-
-  // Double-click header to toggle minimize
-  panelHeader.addEventListener('dblclick', () => {
-    minimizeBtn?.click();
-  });
-
-})();
-
 function updateLogPanel() {
   const ul = document.getElementById('log-list');
   ul.innerHTML = '';
@@ -1049,100 +1945,114 @@ function updateLogPanel() {
 }
 
 function startAnimation() {
-  // Debug logging for troubleshooting
   console.log("startAnimation called");
   console.log("window.leafletMap:", window.leafletMap);
-  console.log("window.realData:", window.realData);
-  console.log("animationData length:", animationData.length);
-  console.log("idx:", idx);
-  
-  const mode = getMode(); // tvoje funkce, nebo document.getElementById('channelSelect').value
+
+  if (!window.parallelMode) {                                    // pokud jsme v single módu, vytvoř panel
+    createBallInfoPanel();
+  } else {
+    const p = document.getElementById('ballInfoPanel');          // v parallel režimu single panel raději skryj
+    if (p) p.style.display = 'none';
+  }
+
+  if (window.parallelMode) {                                      // 🟢 1. Pokud je zapnutý Parallel Mode → ignorujeme single dataset
+    console.log("▶️ [START-ANIMATION] Parallel Mode aktivní");
+
+    if (window.animTimer) {                                        // Reset timeru (sjednoceno)
+      clearTimeout(window.animTimer);
+      window.animTimer = null;
+    }
+
+    for (const [id, track] of Object.entries(window.parallelTracks)) {  // Reset indexů pro všechny tracky
+      track.idx = 0;
+      if (track.marker) {
+        window.leafletMap.removeLayer(track.marker);
+        track.marker = null;
+      }
+    }
+
+    animationActive = true;
+    playbackSpeed = 1;
+    updateSpeedDisplay();
+
+    // Spustíme paralelní smyčku
+    if (window.animTimer) {
+      clearTimeout(window.animTimer);
+      window.animTimer = null;
+    }
+}
+
+  // 🟢 2. Single dataset logika (původní část)
+  const currentGnssDataset =
+    window.currentGnssDataset || getCurrentGnssDataset();
+
+  console.log("currentGnssDataset:", currentGnssDataset);
+  if (!Array.isArray(currentGnssDataset) || !currentGnssDataset.length) {
+    console.error("❌ Nejsou načtena data pro animaci.", currentGnssDataset);
+    return;
+  }
+
+  const mode = getMode(); // např. 'offlinegnss', 'gnss', 'both'
   const dataset = (mode === 'offlinegnss')
     ? (window.fusedData || [])
-    : (window.realData  || []);
+    : (currentGnssDataset || []);
   animationData = Array.isArray(dataset) ? dataset : [];
 
-  // Get current animation mode from UI selector
   const currentMode = document.getElementById('channelSelect')?.value || 'none';
-  console.log("startAnimation called");
+  console.log("startAnimation using mode:", currentMode);
 
-  // Validate that map is available
   if (!window.leafletMap) {
-    console.error("Mapa není k dispozici, nelze spustit animaci.");
+    console.error("❌ Mapa není k dispozici, nelze spustit animaci.");
     return;
   }
 
-  // Get data source for single mode animation (GNSS/offline data)
-  const rawDataSource = window.realData || [];
-  if (!Array.isArray(rawDataSource) || !rawDataSource.length) {
-    console.error("Nejsou načtena data pro animaci.", rawDataSource);
-    return;
-  }
-
-  // Prevent single animation in BOTH mode (uses bothRun() instead)
   if (currentMode === 'both') {
-    console.warn('startAnimation: režim BOTH používá bothRun().');
+    console.warn("⚠️ startAnimation: režim BOTH používá bothRun().");
     return;
   }
 
-  // Prepare animation data by converting raw data to animation series format
-  console.log("🔧 [START-ANIMATION] About to call makeAnimSeries with window.realData length:", window.realData ? window.realData.length : 0);
-  animationData = makeAnimSeries(window.realData);
+  console.log("🔧 [START-ANIMATION] About to call makeAnimSeries with currentGnssDataset length:", currentGnssDataset.length);
+  const srcName = window.currentRendererData || 'GNSS';
+  animationData = makeAnimSeries(currentGnssDataset, srcName);
   console.log("🔧 [START-ANIMATION] makeAnimSeries returned length:", animationData.length);
-  
+
   if (!animationData.length) {
     console.error("❌ [START-ANIMATION] Nejsou načtena reálná data pro animaci (po makeAnimSeries).");
-    console.error("❌ [START-ANIMATION] window.realData:", window.realData);
-    console.error("❌ [START-ANIMATION] animationData:", animationData);
-    
-    // KRÁTKODOBÉ ŘEŠENÍ: Zkusit použít UniversalDataManager jako fallback
-    if (window.universalDataManager) {
-      console.log("🔧 [START-ANIMATION] Fallback: Zkouším UniversalDataManager...");
-      const fallbackData = window.universalDataManager.getCurrentData();
-      console.log("🔧 [START-ANIMATION] UniversalDataManager fallback length:", fallbackData.length);
-      if (fallbackData.length > 0) {
-        animationData = fallbackData;
-        console.log("✅ [START-ANIMATION] Fallback úspěšný, použito UniversalDataManager data");
-      } else {
-        console.error("❌ [START-ANIMATION] Fallback také selhal");
-        return;
-      }
-    } else {
-      console.error("❌ [START-ANIMATION] UniversalDataManager není k dispozici");
-      return;
-    }
+    return;
   }
 
-  // Create or update the main animation marker
-  // In SINGLE modes (GNSS/offlinegnss) we show a black circle marker, not in BOTH mode
+  const firstDataPoint = animationData[0];
   if (!window.marker) {
-    // Create new marker at first data point
-    const firstDataPoint = animationData[0];
     window.marker = L.circleMarker([firstDataPoint.lat, firstDataPoint.lng], {
       radius: 7,
       color: "#000",
       fillColor: "#00bfff",
       fillOpacity: 0.9
-    }).addTo(map);
+    })
+    .bindPopup("Načítám data...")
+    .addTo(map);
   } else {
-    // Update existing marker position to first data point
-    const firstDataPoint = animationData[0];
     window.marker.setLatLng([firstDataPoint.lat, firstDataPoint.lng]);
+    window.marker.setPopupContent("Načítám data...");
   }
 
-  // Initialize animation state and start playback
   animationActive = true;
   playbackSpeed = 1;
   updateSpeedDisplay();
   idx = 0;
-  
-  // Clear any existing timer and start new animation loop
-  if (window.timer) {
-    clearTimeout(window.timer);
-    window.timer = null;
+
+  // Reset timeru (sjednoceno)
+  if (window.animTimer) {
+    clearTimeout(window.animTimer);
+    window.animTimer = null;
   }
-  window.timer = setTimeout(step, 0);
+
+  // Spustíme single smyčku
+  window.animTimer = setTimeout(step, 0);
+
+  console.log("✅ [START-ANIMATION] Animace spuštěna s", animationData.length, "body.");
 }
+
 
 function ensureMap() {
   if (window.leafletMap) return;
@@ -1158,18 +2068,67 @@ function updateSpeedDisplay() {
 }
 
 function updateIncidentBoxes() {
-  const countEl = document.getElementById('incident-summary-count');
-  const listEl  = document.getElementById('incident-summary-list');
-  if (countEl && listEl) {
-    countEl.textContent = incidentLog.length;
-    listEl.innerHTML = '';
-    incidentLog.forEach(inc => {
-      const inT  = inc.inStr || '—';
-      const outT = inc.outStr || '<em>aktivní</em>';
-      const li = document.createElement('li');
-      li.innerHTML = `<strong>IN:</strong> ${inT}&nbsp;<strong>OUT:</strong> ${outT}&nbsp;<strong>Doba:</strong> ${inc.duration}s`;
-      listEl.appendChild(li);
-    });
+  const listEl = document.getElementById('incident-summary-list');
+  if (listEl) {
+    if (incidentLog.length === 0) {
+      listEl.innerHTML = '<div class="text-muted text-center">Žádné incidenty</div>';
+    } else {
+      listEl.innerHTML = '';
+      incidentLog.forEach(inc => {
+        const inT  = inc.inStr || '—';
+        const outT = inc.outStr || '<em class="text-warning">aktivní</em>';
+        const duration = inc.duration || '—';
+        
+        const div = document.createElement('div');
+        div.className = 'border-bottom pb-1 mb-1';
+        div.innerHTML = `
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <strong class="text-primary">IN:</strong> ${inT}<br>
+              <strong class="text-success">OUT:</strong> ${outT}
+            </div>
+            <span class="badge bg-secondary">${duration}s</span>
+          </div>
+        `;
+        listEl.appendChild(div);
+      });
+    }
+  }
+  
+  // 🔧 AKTUALIZACE INCIDENT STATISTIK
+  updateIncidentStats();
+}
+
+// 🔧 NOVÁ FUNKCE PRO INCIDENT STATISTIKY
+function updateIncidentStats() {
+  const countEl = document.getElementById('incident-count');
+  const avgDurationEl = document.getElementById('incident-avg-duration');
+  const dateEl = document.getElementById('incident-date');
+  
+  if (!countEl || !avgDurationEl || !dateEl) return;
+  
+  // Počet incidentů
+  const incidentCount = incidentLog.length;
+  countEl.textContent = incidentCount;
+  
+  // Průměrná doba trvání (pouze ukončené incidenty)
+  const completedIncidents = incidentLog.filter(inc => inc.duration !== null);
+  let avgDuration = 0;
+  
+  if (completedIncidents.length > 0) {
+    const totalDuration = completedIncidents.reduce((sum, inc) => sum + inc.duration, 0);
+    avgDuration = Math.round(totalDuration / completedIncidents.length);
+  }
+  
+  avgDurationEl.innerHTML = `${avgDuration}<sup class="fs-5">s</sup>`;
+  
+  // Datum (z aktuálního času animace)
+  const currentDate = new Date().toLocaleDateString('cs-CZ');
+  dateEl.textContent = `Datum: ${currentDate}`;
+  
+  // 🔍 DEBUG: Logování pro diagnostiku
+  if (incidentCount > 0) {
+    console.log(`📊 [INCIDENT-STATS] Počet: ${incidentCount}, Průměr: ${avgDuration}s, Ukončené: ${completedIncidents.length}`);
   }
 }
 
@@ -1180,10 +2139,17 @@ function resetAnimationState() {
   incidentLog = [];
   prevInRed = false;
 
-  if (window.timer) {
-    clearTimeout(window.timer);
-    window.timer = null;
+  if (window.animTimer) {
+    clearTimeout(window.animTimer);
+    window.animTimer = null;
   }
+  
+  // 🔧 RESET INCIDENT STATISTIK
+  updateIncidentStats();
+  
+  // 🔧 RESET AKTIVNÍCH KOTEV
+  activeAnchors.clear();
+  updateActiveAnchorsDisplay();
 
   if (window.anchorBall && map) {
     map.removeLayer(window.anchorBall);
@@ -1278,7 +2244,7 @@ function footprintForMeshId(mid) {
 const step = () => {
   const mode = getMode();
   if (getMode() === 'both') {
-  if (window.timer) { clearTimeout(window.timer); window.timer = null; }
+  if (window.animTimer) { clearTimeout(window.animTimer); window.animTimer = null; }
     animationActive = false;
     return;
   }
@@ -1292,9 +2258,9 @@ const step = () => {
     if (idx >= animationData.length - 1) {
       console.log(`🏁 [STEP] Animace dokončena - idx=${idx}, animationData.length=${animationData.length}`);
     }
-    if (window.timer) {
-      clearTimeout(window.timer);
-      window.timer = null;
+    if (window.animTimer) {
+      clearTimeout(window.animTimer);
+      window.animTimer = null;
     }
     return;
   }
@@ -1312,7 +2278,7 @@ if (window.FUSED_GPS?.crossMode?.active) {
   console.log(`🚦 [RENDERER] CROSS MODE ACTIVE at ${rec.timeStr}, crossing=${window.FUSED_GPS.crossMode.crossing?.name}`);
 
 // --- DEBUG: Track what drives the robot every second ---
-console.log(`🔍 [RENDERER-DEBUG] rec.timeStr=${rec.timeStr}, rec.lat=${rec.lat}, rec.lng=${rec.lng}`);
+  console.log(`🔍 [RENDERER-DEBUG] rec.timeStr=${rec.timeStr}, rec.lat=${rec.lat}, rec.lng=${rec.lng}`);
 if (rec.timeStr && rec.timeStr >= "07:13:00" && rec.timeStr <= "07:15:10") {
   console.log(`🔍 [ROBOT-DRIVER] ${rec.timeStr}: lat=${rec.lat.toFixed(6)}, lng=${rec.lng.toFixed(6)}, speed=${rec.speed_mps?.toFixed(3)}, mesh_id=${rec.mesh_id}, matched_count=${rec.matched_count}, matched_ids=[${rec.matched_ids?.join(',') || ''}]`);
   
@@ -1369,18 +2335,6 @@ const delay  = Math.max(10, (nextMs - recMs) / (playbackSpeed || 1));
     }
   }
 
-  // Aktualizace hlavní kuličky
-  if (window.marker) {
-    window.marker.setLatLng([rec.lat, rec.lng]);
-  } else {
-    // Vytvoříme marker pokud neexistuje
-    window.marker = L.circleMarker([rec.lat, rec.lng], {
-      radius: 7,
-      color: "#000",
-      fillColor: "#00bfff",
-      fillOpacity: 0.9
-    }).addTo(map);
-  }
   
 // DETEKCE BLÍZKOSTI MESH GPS
 let meshInfo = null;
@@ -1495,37 +2449,42 @@ fps.forEach(id => {
   
   const inRed = turf.booleanPointInPolygon(rec.point, bigPoly) && !inGreen;
 
-  // Automatické posouvání mapy
-  if (followBall && map) {
+  
+  if (followBall && map) {                                                                                                 // Automatické posouvání mapy
     map.panTo([rec.lat, rec.lng], { animate: true, duration: 0.5 });
   }
 
+const ballInfo = document.getElementById('ball-info-content');                                                             // Aktualizace informačního panelu
 
-// Aktualizace informačního panelu
-const ballInfo = document.getElementById('ball-info-content');
 
-// --- SPEED mps/kmh – SPOČÍTAT MIMO IF, aby to viděl i popup
-let mps = 0;
+let mps = 0;                                                                                                                // --- SPEED mps/kmh – POUŽÍT PŘEDPOČÍTANOU RYCHLOST
 if (typeof rec.speed_mps === 'number') {
   mps = rec.speed_mps;
 } else if (idx > 0) {
-  const prev = animationData[idx - 1];
+  
+  const prev = animationData[idx - 1];                                                                                     // 🔧 FALLBACK: Výpočet pro GNSS/BASIC_TABLE data
   const distKm = turf.distance(turf.point([prev.lng, prev.lat]), rec.point, { units: 'kilometers' });
-  const dt = (rec.time - prev.time) / 1000;
-  if (dt > 0) mps = (distKm * 1000) / dt;
+  
+  const recTime = (rec.time instanceof Date) ? rec.time.getTime() : Number(rec.time) || 0;
+  const prevTime = (prev.time instanceof Date) ? prev.time.getTime() : Number(prev.time) || 0;
+  const dt = (recTime - prevTime) / 1000;
+  
+  if (dt > 0) {
+    mps = (distKm * 1000) / dt; // m/s
+  }
 }
 const kmh = mps * 3.6;
 
-// --- DISTANCE TO NEAREST MESH – taky mimo IF
-let distMesh = (typeof rec.dist_to_m === 'number') ? rec.dist_to_m : null;
+
+let distMesh = (typeof rec.dist_to_m === 'number') ? rec.dist_to_m : null;                                                  // --- DISTANCE TO NEAREST MESH – taky mimo IF
 if (distMesh == null && typeof getNearbyMesh === 'function') {
   const near = getNearbyMesh(rec.lat, rec.lng);
   if (near) distMesh = near.dist;
 }
 const distTxt = (typeof distMesh === 'number') ? `${distMesh.toFixed(2)} m` : '—';
 
-// --- PANEL U KULIČKY
-if (ballInfo) {
+
+if (ballInfo) {                                                                                                 // --- PANEL U KULIČKY
   // ---- shoda ID kotev (jen zobrazit) ----
   const matchHtml = (mode === 'offlinegnss' && rec.mesh_id != null)
     ? `<b>Shoda ID kotev:</b> ${
@@ -1539,12 +2498,12 @@ if (ballInfo) {
       }<br><b>MESH ID:</b> ${rec.mesh_id}<br>`
     : (mode === 'offlinegnss' ? `<b>Shoda ID kotev:</b> 0<br>` : '');
   
-    // ... hned nad ballInfo.innerHTML:
-const when = rec.timeStr || "00:00:00";
+    
+const when = rec.timeStr || "00:00:00";                                                                         // ... hned nad ballInfo.innerHTML:
 const tStr = when;
 
-// Determine status and badge
-let statusText, statusClass;
+
+let statusText, statusClass;                                                                                    // Determine status and badge
 if (mode === 'offlinegnss') {
   statusText = 'F_GPS (syntetická)';
   statusClass = 'yellow';
@@ -1598,8 +2557,8 @@ if (panel && rec.crossDebugHtml) {
   panel.innerHTML = rec.crossDebugHtml;
 }
 
-// --- POPUP nad kuličkou jen v OFFLINE GNSS
-if (mode === 'offlinegnss') {
+
+if (mode === 'offlinegnss') {                                                                                            // --- POPUP nad kuličkou jen v OFFLINE GNSS
   if (!window.fgpsPopup) window.fgpsPopup = L.popup({ offset:[0,-10], closeButton:false });
   const mpsLbl = (rec.speed_mps != null) ? rec.speed_mps.toFixed(2) : (kmh/3.6).toFixed(2);
   const tStr   = (mode === 'offlinegnss') ? timeLabelF(rec) : timeLabelG(rec);
@@ -1621,18 +2580,175 @@ if (mode === 'offlinegnss') {
 } else if (window.fgpsPopup) {
   window.leafletMap.closePopup(window.fgpsPopup);
 }
+     
+  if (!window.parallelMode && window.marker && rec) {                                                                    // --- Jednotlivý režim: zobraz popup info panel nad kuličkou
+    const popupHtml = `
+      <div style="font-size:11px; line-height:1.4em">
+        <b>Čas:</b> ${rec.timeStr || '—'}<br>
+        <b>Souřadnice:</b> ${rec.lat.toFixed(6)}, ${rec.lng.toFixed(6)}<br>
+        <b>Rychlost:</b> ${(rec.speed_mps ?? 0).toFixed(2)} m/s (${((rec.speed_mps ?? 0) * 3.6).toFixed(1)} km/h)<br>
+        <b>Status:</b> ${
+          rec.zoneStatus === "GREEN" ? "✅ V zóně" :
+          rec.zoneStatus === "RED"   ? "⛔️ Incident" : "—"
+        }
+      </div>`;
+    window.marker.bindPopup(popupHtml, { offset:[0,-8], closeButton:false });
+    window.marker.openPopup();
+  }
 
-  // Příprava na další krok
-  idx++;
+  processRecord(rec, { marker: window.marker, panel: ballInfoPanel, dataset: animationData, idx, mode: 'single' });       // místo přímého updateMarkerPopup()
+  idx++;                                                                                                                  // Příprava na další krok
   
-  // DEBUG: Logování každých 50 kroků pro sledování průběhu
-  if (idx % 50 === 0) {
+  if (idx % 50 === 0) {                                                                                                   // DEBUG: Logování každých 50 kroků pro sledování průběhu
     console.log(`🔧 [STEP-PROGRESS] idx=${idx}/${animationData.length}, timeStr=${rec.timeStr}, lat=${rec.lat.toFixed(6)}, lng=${rec.lng.toFixed(6)}`);
   }
   
-  window.timer = setTimeout(step, delay);
+  window.animTimer = setTimeout(step, delay);
 };
-window.animationStep = step;
+ 
+
+function startParallelAnimation() {
+  console.log("🎬 [PARALLEL] Spouštím animaci…");
+
+  // zastav případnou single smyčku
+  if (window.animTimer) { clearTimeout(window.animTimer); window.animTimer = null; }
+  animationActive = true;
+
+  // zruš single marker & panel
+  if (window.marker) { window.leafletMap.removeLayer(window.marker); window.marker = null; }
+  if (document.getElementById('ballInfoPanel')) {
+    document.getElementById('ballInfoPanel').remove();
+  }
+  if (window.singlePopup) { window.leafletMap.closePopup(window.singlePopup); window.singlePopup = null; }
+
+  const panelContainer = document.getElementById("parallel-panels");
+  if (panelContainer) panelContainer.innerHTML = "";
+
+  window.parallelInstances = [];
+
+  for (const [ds, track] of Object.entries(window.parallelTracks)) {
+    if (!Array.isArray(track.dataset) || track.dataset.length === 0) continue;
+
+    // infobox
+    const panel = createParallelPanel(`GH5200-${ds}`, track.color);
+    document.getElementById("parallel-panels").appendChild(panel);
+    track.panel = panel;
+
+    // index na nulu
+    track.idx = 0;
+    track.marker = null;
+
+    window.parallelInstances.push(track);
+  }
+
+  parallelStep();
+}
+
+function parallelStep() {
+  let active = false;
+
+  window.parallelInstances.forEach(track => {
+    if (track.idx >= track.dataset.length) return;
+
+    const rec = track.dataset[track.idx];
+    if (!rec) return;
+
+    // první marker pro track
+    if (!track.marker && rec) {
+      track.marker = L.circleMarker([rec.lat, rec.lng], {
+        radius: 6, color: track.color, fillColor: track.color, fillOpacity: 0.9
+      }).addTo(window.leafletMap);
+    }
+
+    processRecord(rec, {
+      marker: track.marker,
+      panel: track.panel,
+      dataset: track.dataset,
+      idx: track.idx,
+      color: track.color,
+      mode: 'parallel'
+    });
+
+    track.idx++;
+    active = true;
+  });
+
+  if (active && animationActive) {
+    window.animTimer = setTimeout(parallelStep, 1000 / (playbackSpeed || 1));
+  } else {
+    console.log("✅ [PARALLEL] Animace dokončena.");
+  }
+}
+
+
+
+function makePanelCollapsible(panel) {
+  const header = document.createElement("div");
+  header.textContent = "▼";
+  header.style.cursor = "pointer";
+  header.style.float = "right";
+  header.style.fontSize = "14px";
+  header.style.marginLeft = "8px";
+  header.onclick = () => {
+    const content = panel.querySelectorAll(".info-item:not(:first-child)");
+    content.forEach(el => {
+      el.style.display = (el.style.display === "none" ? "flex" : "none");
+    });
+  };
+  panel.prepend(header);
+}
+
+function makePanelDraggable(panel) {
+  panel.style.position = "absolute";
+  panel.style.cursor = "move";
+
+  let offsetX, offsetY, isDown = false;
+  panel.onmousedown = (e) => {
+    isDown = true;
+    offsetX = e.clientX - panel.offsetLeft;
+    offsetY = e.clientY - panel.offsetTop;
+  };
+  document.onmousemove = (e) => {
+    if (!isDown) return;
+    panel.style.left = `${e.clientX - offsetX}px`;
+    panel.style.top = `${e.clientY - offsetY}px`;
+  };
+  document.onmouseup = () => { isDown = false; };
+}
+
+function makePanelDraggable(panel) {
+  let isDragging = false;
+  let startX, startY, startLeft, startTop;
+
+  const header = panel.querySelector(".panel-header");
+
+  header.addEventListener("mousedown", (e) => {
+    if (e.target.closest(".close-btn")) return;
+    isDragging = true;
+    startX = e.clientX;
+    startY = e.clientY;
+    startLeft = panel.offsetLeft;
+    startTop = panel.offsetTop;
+    document.addEventListener("mousemove", drag);
+    document.addEventListener("mouseup", stopDrag);
+    e.preventDefault();
+  });
+
+  function drag(e) {
+    if (!isDragging) return;
+    const deltaX = e.clientX - startX;
+    const deltaY = e.clientY - startY;
+    panel.style.left = startLeft + deltaX + "px";
+    panel.style.top = startTop + deltaY + "px";
+    panel.style.position = "absolute";
+  }
+
+  function stopDrag() {
+    isDragging = false;
+    document.removeEventListener("mousemove", drag);
+    document.removeEventListener("mouseup", stopDrag);
+  }
+}
 
 function haversine(lat1, lon1, lat2, lon2) {
   const toRad = deg => deg * Math.PI / 180;
@@ -1651,13 +2767,14 @@ function getVisibleAnchors() {
 
 // ← Odtud už běží loadDay na globální úrovni
 
+// --- Funkce pro načítání datasetů ---
 function loadDataset(name) {
   ensureMap();
   resetAnimationState();
 
   console.log(`📂 [LOAD] Dataset selected: ${name}`);
 
-  // 1) RENDERER režim (klasika)
+  // 1) RENDERER režim (GNSS benchmark)
   if (name.startsWith("RENDERERDATA")) {
     const oldScript = document.getElementById('dynamicDayScript');
     if (oldScript) oldScript.remove();
@@ -1674,7 +2791,6 @@ function loadDataset(name) {
         return;
       }
 
-      // GNSS benchmark (jen černá kulička)
       gnssMaster = (window.realData || []).map(d => {
         const t = (typeof d.time === 'number')
           ? d.time
@@ -1693,7 +2809,7 @@ function loadDataset(name) {
       }).sort((a,b) => a.time - b.time);
 
       benchData = gnssMaster.slice();
-      startAnimation();
+      runSingleAnimation();   // 🔥 místo starého startAnimation()
       applyChannel();
     };
 
@@ -1706,10 +2822,9 @@ function loadDataset(name) {
     return;
   }
 
-  // 2) BASIC_TABLE režim → spustíme OFFLINE engine
+  // 2) BASIC_TABLE režim
   if (name.startsWith("BASIC_TABLE")) {
     console.log(`🚀 [OFFLINE] Spouštím FUSED_GPS s datasetem ${name}`);
-    // Načti dataset jako script
     const script = document.createElement('script');
     script.src = `./${name}.js`;
     script.onload = () => {
@@ -1723,16 +2838,15 @@ function loadDataset(name) {
     return;
   }
 
-  // 3) BOTH režim → současně BASIC_TABLE + GNSS
+  // 3) BOTH režim
   if (name.startsWith("BOTH")) {
     const parts = name.split("_"); // např. BOTH_04062025
     const dateId = parts[1];
     const basicFile = `BASIC_TABLE_${dateId}.js`;
-    const gnssFile  = `GNSS_${dateId}.js`;
+    const gnssFile  = `GNSS_${dateId}.js`; // můžeš fallbacknout na RENDERERDATA1.js
 
     console.log(`⚡ [BOTH] Spouštím BASIC_TABLE + GNSS pro ${dateId}`);
 
-    // Load GNSS dataset
     const gnssScript = document.createElement('script');
     gnssScript.src = `./${gnssFile}`;
     gnssScript.onload = () => {
@@ -1747,7 +2861,6 @@ function loadDataset(name) {
       benchData = gnssMaster.slice();
     };
 
-    // Load BASIC_TABLE dataset a spusť OFFLINE engine
     const basicScript = document.createElement('script');
     basicScript.src = `./${basicFile}`;
     basicScript.onload = () => {
@@ -1781,47 +2894,9 @@ function saveIncidents() {
   console.log(`💾 Incidenty uloženy jako ${filename}`);
 }
 
-// --- RESET INFO PANELU ---
-function resetInfoPanelPosition() {
-  const panel = document.getElementById("infoPanel");
-  if (!panel) return;
-  panel.style.left = "20px";
-  panel.style.top = "80px";
-  panel.style.right = "auto";
-}
+// Reset info panelu odstraněn - panel je nyní v HTML
 
-// --- Drag and drop pro info panel (incident log)
-(function(){
-  const infoPanel = document.getElementById("infoPanel");
-  if (!infoPanel) return;
-
-  let offsetX = 0, offsetY = 0, dragging = false;
-
-  infoPanel.onmousedown = e => {
-    const rect = infoPanel.getBoundingClientRect();
-    offsetX = e.clientX - rect.left;
-    offsetY = e.clientY - rect.top;
-    dragging = true;
-    infoPanel.style.opacity = 0.8;
-
-    document.addEventListener('mousemove', move);
-    document.addEventListener('mouseup', stop);
-  };
-
-  function move(e) {
-    if (!dragging) return;
-    infoPanel.style.left = (e.pageX - offsetX) + "px";
-    infoPanel.style.top = (e.pageY - offsetY) + "px";
-    infoPanel.style.right = "auto";
-  }
-
-  function stop() {
-    dragging = false;
-    infoPanel.style.opacity = 1;
-    document.removeEventListener('mousemove', move);
-    document.removeEventListener('mouseup', stop);
-  }
-})();
+// Drag and drop pro info panel odstraněn - panel je nyní v HTML
 
 function drawIncidentChart(incidents) {
   const options = {
@@ -1919,7 +2994,7 @@ window.applyFusedGpsDataset = function (fused) {
   if (mode === 'offlinegnss') {
     // start
     idx = 0;
-    animationData = window.realData.slice(); // (pokud ještě někde voláš makeAnimSeries, nechej si i to – ale tady už máš jistotu)
+    animationData = getCurrentGnssDataset()?.slice() || []; // (pokud ještě někde voláš makeAnimSeries, nechej si i to – ale tady už máš jistotu)
     startAnimation();
     return;
   }
@@ -2221,34 +3296,7 @@ document.getElementById("loadIncidentsBtn")?.addEventListener("click", () => {
     URL.revokeObjectURL(url);
   });
 
-  // Exportovat váš incidentLog
-const exportLogBtn = document.getElementById("exportLogBtn");
-if (!exportLogBtn) {
-  console.error("Tlačítko exportLogBtn nebylo nalezeno");
-} else {
-  exportLogBtn.addEventListener("click", () => {
-    if (incidentLog.length === 0) {
-      alert("Žádné incidenty k exportu.");
-      return;
-    }
-    const blob = new Blob([JSON.stringify(incidentLog, null, 2)], { type: "application/json" });
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement("a");
-    a.href     = url;
-    a.download = `incident_log_${new Date().toISOString().slice(0,10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  });
-}
-
-  // Vymazání incidentů dole v panelu
-  const clearBtn = document.getElementById('clear-logs');
-  if (clearBtn) {
-    clearBtn.onclick = () => {
-      incidents = [];
-      updateLogPanel();
-    };
-  }
+  // Starý kód pro export a clear tlačítka odstraněn - nyní je v novém kódu výše
 
 // ← SEM vlož kód pro Fullscreen/Restore mapy  
 const mapWrapper = document.getElementById('map-wrapper');
@@ -2297,44 +3345,84 @@ if (mapWrapper && mapEl && btnFs && btnRest) {
   });
 }
 
+// === ANIMATION CONTROL FUNCTIONS ===
+function pauseAnimation() {
+  console.log("⏸️ Pause pressed");
+  window.animationActive = false;
+  if (window.animTimer) { clearTimeout(window.animTimer); window.animTimer = null; }
+}
+
+function resumeAnimation() {
+  console.log("▶️ Resume pressed");
+  if (!window.animationActive) {
+    window.animationActive = true;
+    if (window.parallelMode) parallelStep();
+    else step();
+  }
+}
+
+function stopAnimation() {
+  console.log("⏹️ Stop pressed");
+  window.animationActive = false;
+  if (window.animTimer) { clearTimeout(window.animTimer); window.animTimer = null; }
+
+  // SINGLE cleanup
+  if (!window.parallelMode) {
+    idx = 0;
+    if (window.marker) { window.leafletMap.removeLayer(window.marker); window.marker = null; }
+    if (document.getElementById('ballInfoPanel')) {
+      document.getElementById('ballInfoPanel').remove();
+    }
+    if (window.singlePopup) { window.leafletMap.closePopup(window.singlePopup); window.singlePopup = null; }
+  }
+
+  // PARALLEL cleanup
+  if (window.parallelMode) {
+    window.parallelInstances.forEach(t => {
+      if (t.marker) { window.leafletMap.removeLayer(t.marker); t.marker = null; }
+      t.idx = 0;
+    });
+    const pc = document.getElementById('parallel-panels');
+    if (pc) pc.innerHTML = "";
+  }
+}
+// === BUTTON HANDLERS ===
 // RUN
 document.getElementById('startBtn')?.addEventListener('click', () => {
-  const mode = getMode();
+  const mode = getMode();                                                              // none | offlinegnss | mesh | both ...
   playbackSpeed = 1; updateSpeedDisplay();
 
-  if (mode === 'both') {
-    if (bothPaused && (fIdx < fusedData.length-1 || bIdx < benchData.length-1)) {
-      resumeBoth();        // viz předchozí úpravy BOTH
+  if (mode === 'both') {                                                              // tvůj BOTH režim zde (beze změny)
+    
+    bothRun?.();
+    return;
+  }
+
+  if (window.parallelMode) {                                                          // paralelní pokračování nebo start
+    
+    if (!window.animationActive) resumeAnimation();
+    else parallelStep();
+  } else {                                                                            // single – pokračuj, nebo spusť od začátku
+    
+    if (!window.animationActive && animationData?.length && idx < animationData.length) {
+      resumeAnimation();
     } else {
-      bothRun();
-    }
-  } else {
-    // SINGLE – resume z místa
-    if (Array.isArray(animationData) && animationData.length && idx < animationData.length && !animationActive) {
-      animationActive = true;
-      if (window.timer) { clearTimeout(window.timer); window.timer = null; }
-      window.timer = setTimeout(step, 0);
-    } else {
-      startAnimation(); // první spuštění po loadu
+      startAnimation();
     }
   }
 });
 
 
-
 // PAUSE
 document.getElementById('pauseBtn')?.addEventListener('click', () => {
   const mode = getMode();
-  playbackSpeed = 0; updateSpeedDisplay();
-
   if (mode === 'both') {
+    // tvoje BOTH pauza
     bothPaused = true;
-    bothActiveF = false; bothActiveB = false;
     if (bothTimerF) { clearTimeout(bothTimerF); bothTimerF = null; }
     if (bothTimerB) { clearTimeout(bothTimerB); bothTimerB = null; }
   } else {
-    animationActive = false;
-    if (window.timer) { clearTimeout(window.timer); window.timer = null; }
+    pauseAnimation();
   }
 });
 
@@ -2343,51 +3431,28 @@ document.getElementById('pauseBtn')?.addEventListener('click', () => {
 document.getElementById('stopBtn')?.addEventListener('click', () => {
   const mode = getMode();
   if (mode === 'both') {
-    stopBoth();
-    bothSetStartPositions();
-    bothPaused = false; fIdx = 0; bIdx = 0;
-  } else {
-    resetAnimationState();
-    if (window.marker && animationData.length) {
-      window.marker.setLatLng([animationData[0].lat, animationData[0].lng]);
-    }
+    stopBoth?.();
+    bothSetStartPositions?.();
+    return;
   }
-  updateSpeedDisplay();
+  stopAnimation();
 });
 
 
 // FASTER
 document.getElementById('fasterBtn')?.addEventListener('click', () => {
-  const inBoth = (getMode() === 'both');
   speedIdx = Math.min(speeds.length - 1, speedIdx + 1);
   playbackSpeed = speeds[speedIdx];
   updateSpeedDisplay();
-
-  if (inBoth) {
-    if (bothTimerF) { clearTimeout(bothTimerF); bothTimerF = null; }
-    if (bothTimerB) { clearTimeout(bothTimerB); bothTimerB = null; }
-    scheduleNextF();
-    tickGNSS();
-  } else if (!animationActive && idx < animationData.length - 1 && !window.timer) {
-    animationActive = true; step();
-  }
+  if (!window.animationActive) resumeAnimation();
 });
 
 // SLOWER
 document.getElementById('slowerBtn')?.addEventListener('click', () => {
-  const inBoth = (getMode() === 'both');
   speedIdx = Math.max(0, speedIdx - 1);
   playbackSpeed = speeds[speedIdx];
   updateSpeedDisplay();
-
-  if (inBoth) {
-    if (bothTimerF) { clearTimeout(bothTimerF); bothTimerF = null; }
-    if (bothTimerB) { clearTimeout(bothTimerB); bothTimerB = null; }
-    scheduleNextF();
-    tickGNSS();
-  } else if (!animationActive && idx < animationData.length - 1 && !window.timer) {
-    animationActive = true; step();
-  }
+  if (!window.animationActive) resumeAnimation();
 });
 
 document.getElementById('btn-save-fused-log')?.addEventListener('click', () => {
@@ -2398,6 +3463,33 @@ document.getElementById('btn-save-fused-log')?.addEventListener('click', () => {
   // 2) Pokud chceš i JS dataset (pro snadné <script> načítání):
   // window.FUSED_GPS?.downloadFgpsJs?.(window.fusedLog?.viz_rows ?? [], `F_GPS_${stamp}.js`);
 });
+
+document.addEventListener('DOMContentLoaded', function() {
+  console.log("📌 DOMContentLoaded → inicializace datasetSelector + ParallelUI");
+
+  // --- dataset selector ---
+  const datasetSelect = document.getElementById('dataset-selector');
+  if (datasetSelect) {
+    datasetSelect.addEventListener('change', function() {
+      const selectedDataset = this.value;  // např. "1" → "RENDERER1"
+      const dataset = window[`realData_RENDERER${selectedDataset}`];
+
+      if (!dataset) {
+        console.error(`❌ Dataset RENDERER${selectedDataset} nebyl nalezen`);
+        return;
+      }
+
+      window.currentGnssDataset = dataset;
+
+      console.log(`🎬 [LOADER] Spouštím animaci s datasetem: RENDERER${selectedDataset}, záznamů: ${dataset.length}`);
+      window.startAnimation();
+    });
+  }
+
+  // --- parallel UI ---
+  initParallelUI();
+});
+
 
 // --- KONSTANTY A INDEXY ---
 let fIdx = 0;
@@ -2712,8 +3804,10 @@ function bothRun() {
   }
 
   // GNSS zdroj: použij stejné zpracování jako single (plynulé!)
-  const src = (Array.isArray(window.realData) && window.realData.length)
-    ? makeAnimSeries(window.realData)
+  const currentGnssDataset = getCurrentGnssDataset();
+  const srcName = window.currentRendererData || 'GNSS';
+  const src = (Array.isArray(currentGnssDataset) && currentGnssDataset.length)
+    ? makeAnimSeries(currentGnssDataset, srcName)
     : gnssMaster.map(d => ({ lat:d.lat, lng:d.lng, time:d.time, speed_mps:d.speed_mps ?? null }));
 
   benchData = src.map(r => ({
@@ -2835,8 +3929,6 @@ function updateGnssPopup(bData) {
   `);
 }
 
-
-
 function updateBothInfoPanel(fIndex, bIndex) {
   const info = document.getElementById('ball-info-content');
   if (!info) return;
@@ -2899,8 +3991,6 @@ function updateBothInfoPanel(fIndex, bIndex) {
   `;
 }
 
-
-
 window.dbgAnch = (ms) => {
   const counts = anchorsWindowForward(ms, 28, 6);
   const scores = segmentScoresFromAnchors(counts);
@@ -2947,124 +4037,17 @@ document.getElementById('btn-save-fgps')?.addEventListener('click', () => {
   } else {
     alert("Syntetická data nejsou k dispozici.");
   }
-
-  document.getElementById('daySelect').addEventListener('change', e => {
-  const datasetName = e.target.value;
-  loadDataset(datasetName);
+});
+  document.addEventListener("DOMContentLoaded", () => {
+  const daySelect = document.getElementById("daySelect");
+  if (daySelect) {
+    daySelect.addEventListener("change", e => {
+      const datasetName = e.target.value;
+      loadDataset(datasetName);
+    });
+    console.log("✅ daySelect listener připojen");
+  } else {
+    console.warn("⚠️ Element #daySelect nebyl nalezen – listener nepřipojen");
+  }
 });
 
-// --- Funkce pro načítání datasetů ---
-function loadDataset(name) {
-  ensureMap();
-  resetAnimationState();
-
-  console.log(`📂 [LOAD] Dataset selected: ${name}`);
-
-  // 1) RENDERER režim (klasika)
-  if (name.startsWith("RENDERERDATA") || /^[1-9]|10$/.test(name)) {
-    const oldScript = document.getElementById('dynamicDayScript');
-    if (oldScript) oldScript.remove();
-
-    const script = document.createElement('script');
-    script.src = `./RENDERERDATA${name}.js`;
-    script.id  = 'dynamicDayScript';
-
-    script.onload = () => {
-      console.log(`✅ RENDERERDATA${name}.js načten`);
-
-      if (!Array.isArray(window.realData) || !window.realData.length) {
-        alert("Data nebyla správně načtena.");
-        return;
-      }
-
-      // GNSS benchmark (jen černá kulička)
-      gnssMaster = (window.realData || []).map(d => {
-        const t = (typeof d.time === 'number')
-          ? d.time
-          : Date.parse(
-              (typeof d.timestamp === 'string' && d.timestamp.includes('T'))
-                ? d.timestamp
-                : `1970-01-01T${String(d.timestamp).padStart(8,'0')}Z`
-            );
-        return {
-          lat: +d.lat,
-          lng: +d.lng,
-          time: t,
-          timeStr: d.timeStr || d.timestamp || "00:00:00",
-          speed_mps: d.speed_mps ?? null
-        };
-      }).sort((a,b) => a.time - b.time);
-
-      benchData = gnssMaster.slice();
-      startAnimation();
-      applyChannel();
-    };
-
-    script.onerror = () => {
-      console.error(`❌ Soubor RENDERERDATA${name}.js se nepodařilo načíst.`);
-      alert(`Soubor RENDERERDATA${name}.js se nepodařilo načíst.`);
-    };
-
-    document.body.appendChild(script);
-    return;
-  }
-
-  // 2) BASIC_TABLE režim → spustíme OFFLINE engine
-  if (name.startsWith("BASIC_TABLE")) {
-    console.log(`🚀 [OFFLINE] Spouštím FUSED_GPS s datasetem ${name}`);
-    // Načti dataset jako script
-    const script = document.createElement('script');
-    script.src = `./${name}.js`;
-    script.onload = () => {
-      if (typeof runOfflineGNSS === "function") {
-        runOfflineGNSS();
-      } else {
-        console.error("❌ runOfflineGNSS není dostupný!");
-      }
-    };
-    document.body.appendChild(script);
-    return;
-  }
-
-  // 3) BOTH režim → současně BASIC_TABLE + GNSS
-  if (name.startsWith("BOTH")) {
-    const parts = name.split("_"); // např. BOTH_04062025
-    const dateId = parts[1];
-    const basicFile = `BASIC_TABLE_${dateId}.js`;
-    const gnssFile  = `RENDERERDATA1.js`; // fallback na RENDERERDATA1
-
-    console.log(`⚡ [BOTH] Spouštím BASIC_TABLE + GNSS pro ${dateId}`);
-
-    // Load GNSS dataset
-    const gnssScript = document.createElement('script');
-    gnssScript.src = `./${gnssFile}`;
-    gnssScript.onload = () => {
-      console.log(`✅ ${gnssFile} načten`);
-      gnssMaster = (window.realData || []).map(d => ({
-        lat: +d.lat,
-        lng: +d.lng,
-        time: Date.parse(d.timestamp || `1970-01-01T${d.timeStr}Z`),
-        timeStr: d.timeStr || d.timestamp,
-        speed_mps: d.speed_mps ?? null
-      }));
-      benchData = gnssMaster.slice();
-    };
-
-    // Load BASIC_TABLE dataset a spusť OFFLINE engine
-    const basicScript = document.createElement('script');
-    basicScript.src = `./${basicFile}`;
-    basicScript.onload = () => {
-      if (typeof runOfflineGNSS === "function") {
-        runOfflineGNSS();
-      }
-    };
-
-    document.body.appendChild(gnssScript);
-    document.body.appendChild(basicScript);
-    return;
-  }
-
-  console.warn(`⚠️ Dataset ${name} nebyl rozpoznán.`);
-}
-
-});   // konec DOMContentLoaded
